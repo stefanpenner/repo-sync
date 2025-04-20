@@ -39,9 +39,10 @@ PARALLEL_JOBS=4
 # Source the sync functions
 # shellcheck source=../lib/logging.sh
 
-#source "$(dirname "$0")/../lib/logging.sh"
+source "$(dirname "$BASH_SOURCE")/../lib/logging.sh"
+
 # shellcheck source=../lib/sync_functions.sh
-# source "$(dirname "$0")/../lib/sync_functions.sh"
+source "$(dirname "$BASH_SOURCE")/../lib/sync_functions.sh"
 
 # Check for required dependencies
 check_dependencies() {

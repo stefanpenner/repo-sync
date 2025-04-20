@@ -1,5 +1,7 @@
 # GitHub Repository Synchronization Script
 
+note: this is largely an experiment in prompt engineering, learning from the resulting code, and then trying to make it all work.
+
 A well-tested, maintainable Bash script that synchronizes GitHub repositories and their pull requests between organizations.
 
 ## Features

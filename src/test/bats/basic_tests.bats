@@ -47,7 +47,7 @@ teardown() {
   run parse_args "${args[@]}"
   
   assert_failure
-  assert_output_contains "Missing required arguments"
+  assert_output_contains "Missing required argument: --repo"
 }
 
 @test "parse_args handles optional PR number" {
