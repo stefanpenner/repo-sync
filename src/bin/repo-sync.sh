@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# Guard against multiple sourcing
+if [[ -n "${_REPO_SYNC_SH_SOURCED:-}" ]]; then
+  return 0
+fi
+_REPO_SYNC_SH_SOURCED=1
+
 # github-sync.sh - GitHub Repository Synchronization Script
 #
 # This script synchronizes GitHub repositories and their pull requests between organizations.
@@ -18,6 +24,8 @@ readonly VERSION="0.1.0"
 # Default configuration
 readonly DEFAULT_CONFIG_FILE="${HOME}/.github-sync/config.yaml"
 
+# shellcheck source=src/lib/logging.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/logging.sh"
 # Current log level (default to INFO)
 export LOG_LEVEL=$LOG_LEVEL_INFO
 
@@ -29,9 +37,7 @@ PR_NUMBER=""
 CONFIG_FILE=""
 PARALLEL_JOBS=4
 
-# Source the sync functions
-# shellcheck source=src/lib/logging.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../lib/logging.sh"
+
 
 # shellcheck source=src/lib/sync_functions.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/sync_functions.sh"

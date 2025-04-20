@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+
+# Guard against multiple sourcing
+if [[ -n "${_SYNC_FUNCTIONS_SH_SOURCED:-}" ]]; then
+  return 0
+fi
+_SYNC_FUNCTIONS_SH_SOURCED=1
+
 # Source the sync functions
 # shellcheck source=src/lib/logging.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../logging.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 
 # Global configuration
 readonly GITHUB_BASE_URL=${GITHUB_BASE_URL:-"https://github.com"}

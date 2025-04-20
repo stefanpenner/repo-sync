@@ -7,7 +7,7 @@ source "$BATS_TEST_DIRNAME/test_helper.bash"
 setup_test_env
 
 # Load the main script
-# shellcheck source=../../bin/repo-sync.sh
+# shellcheck source=src/bin/repo-sync.sh
 source "$BATS_TEST_DIRNAME/../../bin/repo-sync.sh"
 
 

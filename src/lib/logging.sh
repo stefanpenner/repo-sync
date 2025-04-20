@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
-# Log levels
-readonly LOG_LEVEL_DEBUG=0
-readonly LOG_LEVEL_INFO=1
-readonly LOG_LEVEL_WARN=2
-readonly LOG_LEVEL_ERROR=3
+
+# Guard against multiple sourcing
+if [[ -n "${_LOGGING_SH_SOURCED:-}" ]]; then
+  return 0
+fi
+_LOGGING_SH_SOURCED=1
+
+# Log levels - only declare if not already set
+if [[ -z "${LOG_LEVEL_DEBUG+x}" ]]; then
+  readonly LOG_LEVEL_DEBUG=0
+  readonly LOG_LEVEL_INFO=1
+  readonly LOG_LEVEL_WARN=2
+  readonly LOG_LEVEL_ERROR=3
+fi
 
 # Current log level (default to INFO)
-LOG_LEVEL=$LOG_LEVEL_INFO # default to INFO for now
+LOG_LEVEL=${LOG_LEVEL:-$LOG_LEVEL_INFO} # default to INFO for now
 
 # Logging function
 # Usage: log <level> <message>

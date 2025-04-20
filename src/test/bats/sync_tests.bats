@@ -1,10 +1,12 @@
 #!/usr/bin/env bats
 
+# Load the main script
+# shellcheck source=../../bin/repo-sync.sh
+source "$BATS_TEST_DIRNAME/../../lib/sync_functions.sh"
+
 # shellcheck source=./test_helper.bash
 source "$BATS_TEST_DIRNAME/test_helper.bash"
 
-# shellcheck source=src/lib/sync_functions.sh
-source "$(dirname "$(dirname "$BATS_TEST_DIRNAME")")/lib/sync_functions.sh"
 
 setup() {
     setup_test_env
