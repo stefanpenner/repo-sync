@@ -143,6 +143,7 @@ teardown() {
 
 @test "debug mode enables verbose output" {
   export DEBUG="true"
+  export LOG_LEVEL=$LOG_LEVEL_DEBUG  # Set log level to DEBUG
   gh() {
     if [[ "$1" == "auth" && "$2" == "status" ]]; then
       echo "✓ Logged in to github.com as test-user"
@@ -153,27 +154,95 @@ teardown() {
   
   run main --source-org test --target-org test --repo test
   assert_success
-  # The + before the command indicates debug mode is enabled
-  assert_output_contains "+"
+  
+  # Check for debug output in dependency checking
+  assert_output_contains "DEBUG: Checking dependencies"
+  assert_output_contains "DEBUG: Found command: bash"
+  assert_output_contains "DEBUG: Found command: gh"
+  assert_output_contains "DEBUG: Found command: jq"
+  assert_output_contains "DEBUG: Bash version OK:"
+  assert_output_contains "DEBUG: All dependencies found"
+  
+  # Check for other debug messages
+  assert_output_contains "DEBUG: Parsing arguments"
+  
+  # Check for info messages (should still appear in debug mode)
+  assert_output_contains "INFO: Starting GitHub repository synchronization"
 }
 
-@test "logging functions work correctly" {
-  # Test debug logging
+@test "logging functions respect log levels" {
+  # Test at DEBUG level (should show all messages)
+  export LOG_LEVEL=$LOG_LEVEL_DEBUG
+  
   run log $LOG_LEVEL_DEBUG "debug message"
   assert_success
   assert_output_contains "DEBUG: debug message"
   
-  # Test info logging
   run log $LOG_LEVEL_INFO "info message"
   assert_success
   assert_output_contains "INFO: info message"
   
-  # Test warn logging
   run log $LOG_LEVEL_WARN "warn message"
   assert_success
   assert_output_contains "WARN: warn message"
   
-  # Test error logging
+  run log $LOG_LEVEL_ERROR "error message"
+  assert_success
+  assert_output_contains "ERROR: error message"
+  
+  # Test at INFO level (should not show DEBUG)
+  export LOG_LEVEL=$LOG_LEVEL_INFO
+  
+  run log $LOG_LEVEL_DEBUG "debug message"
+  assert_success
+  assert_output_not_contains "DEBUG: debug message"
+  
+  run log $LOG_LEVEL_INFO "info message"
+  assert_success
+  assert_output_contains "INFO: info message"
+  
+  run log $LOG_LEVEL_WARN "warn message"
+  assert_success
+  assert_output_contains "WARN: warn message"
+  
+  run log $LOG_LEVEL_ERROR "error message"
+  assert_success
+  assert_output_contains "ERROR: error message"
+  
+  # Test at WARN level (should only show WARN and ERROR)
+  export LOG_LEVEL=$LOG_LEVEL_WARN
+  
+  run log $LOG_LEVEL_DEBUG "debug message"
+  assert_success
+  assert_output_not_contains "DEBUG: debug message"
+  
+  run log $LOG_LEVEL_INFO "info message"
+  assert_success
+  assert_output_not_contains "INFO: info message"
+  
+  run log $LOG_LEVEL_WARN "warn message"
+  assert_success
+  assert_output_contains "WARN: warn message"
+  
+  run log $LOG_LEVEL_ERROR "error message"
+  assert_success
+  assert_output_contains "ERROR: error message"
+  
+  # Test at ERROR level (should only show ERROR)
+  export LOG_LEVEL=$LOG_LEVEL_ERROR
+  
+  run log $LOG_LEVEL_DEBUG "debug message"
+  assert_success
+  assert_output_not_contains "DEBUG: debug message"
+  
+  run log $LOG_LEVEL_INFO "info message"
+  assert_success
+  assert_output_not_contains "INFO: info message"
+  
+  run log $LOG_LEVEL_WARN "warn message"
+  assert_success
+  assert_output_not_contains "WARN: warn message"
+  
   run log $LOG_LEVEL_ERROR "error message"
   assert_success
   assert_output_contains "ERROR: error message"

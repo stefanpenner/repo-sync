@@ -46,23 +46,33 @@ source "$(dirname "$BASH_SOURCE")/../lib/sync_functions.sh"
 
 # Check for required dependencies
 check_dependencies() {
+    log $LOG_LEVEL_DEBUG "Checking dependencies"
+    
     local missing_deps=()
     
     # Check for required commands
     for cmd in bash gh jq; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
+            log $LOG_LEVEL_DEBUG "Missing command: $cmd"
             missing_deps+=("$cmd")
+        else
+            log $LOG_LEVEL_DEBUG "Found command: $cmd"
         fi
     done
 
     # Check bash version
     if [[ ${BASH_VERSINFO[0]} -lt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -lt 4) ]]; then
+        log $LOG_LEVEL_DEBUG "Bash version too old: ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
         missing_deps+=("bash>=4.4")
+    else
+        log $LOG_LEVEL_DEBUG "Bash version OK: ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"
     fi
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
         error "Missing dependencies: ${missing_deps[*]}"
     fi
+    
+    log $LOG_LEVEL_DEBUG "All dependencies found"
 }
 
 # Validate GitHub token
@@ -79,52 +89,68 @@ validate_github_token() {
 
 # Parse command line arguments
 parse_args() {
+    log $LOG_LEVEL_DEBUG "Parsing arguments: $*"
+    
     while [[ $# -gt 0 ]]; do
         case $1 in
             --source-org)
                 SOURCE_ORG="$2"
+                log $LOG_LEVEL_DEBUG "Set source organization: $SOURCE_ORG"
                 shift 2
                 ;;
             --target-org)
                 TARGET_ORG="$2"
+                log $LOG_LEVEL_DEBUG "Set target organization: $TARGET_ORG"
                 shift 2
                 ;;
             --repo)
                 REPO_NAME="$2"
+                log $LOG_LEVEL_DEBUG "Set repository name: $REPO_NAME"
                 shift 2
                 ;;
             --pr)
                 PR_NUMBER="$2"
+                log $LOG_LEVEL_DEBUG "Set PR number: $PR_NUMBER"
                 shift 2
                 ;;
             --config)
                 CONFIG_FILE="$2"
+                log $LOG_LEVEL_DEBUG "Set config file: $CONFIG_FILE"
                 shift 2
                 ;;
             --parallel)
                 PARALLEL_JOBS="$2"
+                log $LOG_LEVEL_DEBUG "Set parallel jobs: $PARALLEL_JOBS"
                 shift 2
                 ;;
             --help)
+                log $LOG_LEVEL_DEBUG "Help requested"
                 show_help
                 exit 0
                 ;;
             *)
+                log $LOG_LEVEL_DEBUG "Unknown option: $1"
                 error "Unknown option: $1"
                 ;;
         esac
     done
 
     # Validate required arguments
+    log $LOG_LEVEL_DEBUG "Validating required arguments"
     if [[ -z "$SOURCE_ORG" ]]; then
+        log $LOG_LEVEL_DEBUG "Missing required argument: --source-org"
         error "Missing required argument: --source-org"
     fi
     if [[ -z "$TARGET_ORG" ]]; then
+        log $LOG_LEVEL_DEBUG "Missing required argument: --target-org"
         error "Missing required argument: --target-org"
     fi
     if [[ -z "$REPO_NAME" ]]; then
+        log $LOG_LEVEL_DEBUG "Missing required argument: --repo"
         error "Missing required argument: --repo"
     fi
+    
+    log $LOG_LEVEL_DEBUG "All required arguments present"
 }
 
 # Show help message

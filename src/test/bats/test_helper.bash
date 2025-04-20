@@ -116,8 +116,16 @@ setup_test_env() {
     export TARGET_ORG="test-target-org"
     export REPO_NAME="test-repo"
     export GITHUB_TOKEN="test-token"
+    
+    # Set up log levels
+    export LOG_LEVEL_DEBUG=0
     export LOG_LEVEL_INFO=1
+    export LOG_LEVEL_WARN=2
     export LOG_LEVEL_ERROR=3
+    
+    # Set default log level to INFO
+    export LOG_LEVEL=$LOG_LEVEL_INFO
+    
     export PARALLEL_JOBS=2
 }
 
@@ -128,15 +136,13 @@ cleanup_test_env() {
     unset TARGET_ORG 2>/dev/null || true
     unset REPO_NAME 2>/dev/null || true
     unset GITHUB_TOKEN 2>/dev/null || true
+    
+    # Clean up log level variables
+    unset LOG_LEVEL_DEBUG 2>/dev/null || true
     unset LOG_LEVEL_INFO 2>/dev/null || true
+    unset LOG_LEVEL_WARN 2>/dev/null || true
     unset LOG_LEVEL_ERROR 2>/dev/null || true
+    unset LOG_LEVEL 2>/dev/null || true
+    
     unset PARALLEL_JOBS 2>/dev/null || true
 }
-
-# Log function for tests
-log() {
-    local level=$1
-    shift
-    local message=$*
-    echo "[$level] $message"
-} 
