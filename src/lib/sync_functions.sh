@@ -17,7 +17,6 @@ readonly CLONE_MAX_AGE_DAYS=${CLONE_MAX_AGE_DAYS:-7}
 readonly SOURCE_REMOTE=${SOURCE_REMOTE:-"source"}
 readonly MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-4}
 readonly LOCK_TIMEOUT_SECONDS=${LOCK_TIMEOUT_SECONDS:-300}  # 5 minutes
-readonly RATE_LIMIT_BACKOFF_SECONDS=${RATE_LIMIT_BACKOFF_SECONDS:-60}
 
 # Global variables for cleanup
 declare -a CLEANUP_FILES=()
@@ -62,42 +61,13 @@ validate_branch_name() {
   return 0
 }
 
-# Check rate limit with backoff
-check_rate_limit() {
-  return 0
-  local response
-  local remaining
-  local reset_time
-  local current_time
-  local sleep_time
-  
-  while true; do
-    response=$(gh api rate_limit)
-    remaining=$(echo "$response" | jq -r '.resources.core.remaining')
-    reset_time=$(echo "$response" | jq -r '.resources.core.reset')
-    current_time=$(date +%s)
-    
-    if [[ "$remaining" -gt 0 ]]; then
-      break
-    fi
-    
-    sleep_time=$((reset_time - current_time + 1))
-    if [[ $sleep_time -lt 0 ]]; then
-      sleep_time=$RATE_LIMIT_BACKOFF_SECONDS
-    fi
-    
-    log $LOG_LEVEL_WARN "Rate limit reached. Waiting $sleep_time seconds..."
-    sleep "$sleep_time"
-  done
-}
-
 # List pull requests
 # Usage: list_prs <org> <repo> [state]
 list_prs() {
   local org=$1
   local repo=$2
   local state=${3:-"open"}
-  local per_page=10 # TODO: Adding pagination support and rate limit handling
+  local per_page=10 # TODO: Adding pagination support
 
   # Validate inputs
   if ! validate_repo_name "$org" || ! validate_repo_name "$repo"; then
@@ -110,8 +80,6 @@ list_prs() {
     return 1
   fi
 
-  check_rate_limit
-  
   # Get first page of PRs
   if ! gh api "/repos/$org/$repo/pulls?state=$state&page=1&per_page=$per_page" | jq -r '.'; then
     log $LOG_LEVEL_ERROR "Failed to fetch PRs"
@@ -131,7 +99,6 @@ create_pr() {
   local head=$5
   local base=$6
 
-  check_rate_limit
   gh api "/repos/$org/$repo/pulls" \
     -f title="$title" \
     -f body="$body" \
@@ -149,13 +116,11 @@ update_pr() {
   local body=$5
   local state=$6
 
-  check_rate_limit
-
   log $LOG_LEVEL_DEBUG "Updating PR #$pr_number in $org/$repo"
-  local result=$(gh api -X PATCH "/repos/$org/$repo/pulls/$pr_number" \
+  gh api -X PATCH "/repos/$org/$repo/pulls/$pr_number" \
     -f title="$title" \
     -f body="$body" \
-    -f state="$state") | jq -r '.'
+    -f state="$state" | jq -r '.'
 }
 
 # Get clone directory for a specific repository
@@ -188,10 +153,6 @@ get_pr_info() {
   fi
 
   log $LOG_LEVEL_DEBUG "Getting PR info for $org/$repo/$pr_number"
-  
-  # Check rate limit before making the API call
-  log $LOG_LEVEL_DEBUG "Checking rate limit"
-  check_rate_limit
   
   # Get PR information
   log $LOG_LEVEL_DEBUG "Fetching PR info from GitHub API"
@@ -376,8 +337,6 @@ sync_single_pr() {
     return 1
   fi
 
-
-
   existing_pr=$(echo "$target_prs" | jq -r --arg title "$title" 'select(.title == $title)')
   echo "existing_pr: [$existing_pr]">&2
   if [[ -n "$existing_pr" ]]; then
@@ -453,7 +412,7 @@ sync_all_prs() {
 # Usage: sync_repository <source_org> <source_repo> <target_org> <target_repo> [pr_number]
 sync_repository() {
   local source_org=$1
-  local source_repo=$2gv
+  local source_repo=$2
   local target_org=$3
   local target_repo=$4
   local pr_number=${5:-}
