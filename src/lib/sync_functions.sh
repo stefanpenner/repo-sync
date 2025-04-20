@@ -1,9 +1,126 @@
 #!/usr/bin/env bash
+# Source the sync functions
+# shellcheck source=src/lib/logging.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../logging.sh"
 
-# Global variables for clone management
-readonly CLONE_BASE_DIR="${HOME}/.github-sync/clones"
-readonly CLONE_MAX_AGE_DAYS=7
-readonly SOURCE_REMOTE="source"
+# Global configuration
+readonly GITHUB_BASE_URL=${GITHUB_BASE_URL:-"https://github.com"}
+readonly CLONE_BASE_DIR=${CLONE_BASE_DIR:-"${HOME}/.github-sync/clones"}
+readonly CLONE_MAX_AGE_DAYS=${CLONE_MAX_AGE_DAYS:-7}
+readonly SOURCE_REMOTE=${SOURCE_REMOTE:-"source"}
+readonly MAX_PARALLEL_JOBS=${MAX_PARALLEL_JOBS:-4}
+readonly LOCK_TIMEOUT_SECONDS=${LOCK_TIMEOUT_SECONDS:-300}  # 5 minutes
+readonly RATE_LIMIT_BACKOFF_SECONDS=${RATE_LIMIT_BACKOFF_SECONDS:-60}
+
+# Global variables for cleanup
+declare -a CLEANUP_FILES=()
+declare -a CLEANUP_DIRS=()
+
+# Setup cleanup handler
+setup_cleanup() {
+  trap 'cleanup_handler' EXIT INT TERM
+}
+
+# Cleanup handler
+cleanup_handler() {
+  local exit_code=$?
+  log $LOG_LEVEL_DEBUG "Running cleanup handler"
+  
+  # Remove lock files
+  for lock_file in "${CLEANUP_FILES[@]}"; do
+    if [[ -f "$lock_file" ]]; then
+      rm -f "$lock_file"
+    fi
+  done
+  
+  # Clean up temporary directories
+  for dir in "${CLEANUP_DIRS[@]}"; do
+    if [[ -d "$dir" ]]; then
+      rm -rf "$dir"
+    fi
+  done
+  
+  exit $exit_code
+}
+
+# Validate branch name
+# Usage: validate_branch_name <name>
+validate_branch_name() {
+  local name=$1
+  # Branch names can't contain spaces, ~, ^, :, ?, *, [, @, or end with .lock
+  if ! [[ "$name" =~ ^[a-zA-Z0-9._-]+$ ]] || [[ "$name" =~ \.lock$ ]]; then
+    log $LOG_LEVEL_ERROR "Invalid branch name: $name"
+    return 1
+  fi
+  return 0
+}
+
+# Acquire lock with timeout
+# Usage: acquire_lock <lock_file>
+acquire_lock() {
+  local lock_file=$1
+  local pid
+  local timestamp
+  
+  # Check if lock file exists and is not stale
+  if [[ -f "$lock_file" ]]; then
+    pid=$(head -n 1 "$lock_file")
+    timestamp=$(tail -n 1 "$lock_file")
+    
+    # Check if process is still running
+    if kill -0 "$pid" 2>/dev/null; then
+      # Check if lock is stale
+      if (( $(date +%s) - timestamp > LOCK_TIMEOUT_SECONDS )); then
+        log $LOG_LEVEL_WARN "Removing stale lock file"
+        rm -f "$lock_file"
+      else
+        log $LOG_LEVEL_ERROR "Another process is currently updating this repository"
+        return 1
+      fi
+    else
+      # Process is not running, remove stale lock
+      rm -f "$lock_file"
+    fi
+  fi
+  
+  # Create new lock file
+  if ! (set -o noclobber; echo "$$" > "$lock_file" && date +%s >> "$lock_file") 2>/dev/null; then
+    log $LOG_LEVEL_ERROR "Failed to create lock file"
+    return 1
+  fi
+  
+  # Add to cleanup list
+  CLEANUP_FILES+=("$lock_file")
+  return 0
+}
+
+# Check rate limit with backoff
+check_rate_limit() {
+  local response
+  local remaining
+  local reset_time
+  local current_time
+  local sleep_time
+  
+  while true; do
+    response=$(gh api rate_limit)
+    remaining=$(echo "$response" | jq -r '.resources.core.remaining')
+    reset_time=$(echo "$response" | jq -r '.resources.core.reset')
+    current_time=$(date +%s)
+    
+    if [[ "$remaining" -gt 0 ]]; then
+      break
+    fi
+    
+    sleep_time=$((reset_time - current_time + 1))
+    if [[ $sleep_time -lt 0 ]]; then
+      sleep_time=$RATE_LIMIT_BACKOFF_SECONDS
+    fi
+    
+    log $LOG_LEVEL_WARN "Rate limit reached. Waiting $sleep_time seconds..."
+    sleep "$sleep_time"
+  done
+}
 
 # List pull requests
 # Usage: list_prs <org> <repo> [state]
@@ -11,9 +128,45 @@ list_prs() {
   local org=$1
   local repo=$2
   local state=${3:-"open"}
+  local page=1
+  local per_page=100
+  local all_prs="[]"
+  local current_prs
 
-  check_rate_limit
-  gh api "/repos/$org/$repo/pulls?state=$state" | jq -r '.[]'
+  # Validate inputs
+  if ! validate_repo_name "$org" || ! validate_repo_name "$repo"; then
+    return 1
+  fi
+
+  # Validate state
+  if [[ ! "$state" =~ ^(open|closed|all)$ ]]; then
+    log $LOG_LEVEL_ERROR "Invalid PR state: $state"
+    return 1
+  fi
+
+  while true; do
+    check_rate_limit
+    
+    # Get current page of PRs
+    if ! current_prs=$(gh api "/repos/$org/$repo/pulls?state=$state&page=$page&per_page=$per_page" | jq -r '.'); then
+      log $LOG_LEVEL_ERROR "Failed to fetch PRs page $page"
+      return 1
+    fi
+
+    # Check if we got any PRs
+    if [[ "$(echo "$current_prs" | jq 'length')" -eq 0 ]]; then
+      break
+    fi
+
+    # Merge with existing PRs
+    all_prs=$(echo "$all_prs" | jq --argjson current "$current_prs" '. + $current')
+
+    # Increment page
+    ((page++))
+  done
+
+  echo "$all_prs"
+  return 0
 }
 
 # Create pull request
@@ -75,9 +228,18 @@ init_clone() {
   local source_repo=$4
   local clone_dir
   clone_dir=$(get_clone_dir "$org" "$repo")
+  local lock_file="${clone_dir}.lock"
+
+  log $LOG_LEVEL_DEBUG "Initializing clone for $org/$repo from $source_org/$source_repo"
 
   # Create clone directory if it doesn't exist
   mkdir -p "$clone_dir"
+  CLEANUP_DIRS+=("$clone_dir")
+
+  # Acquire lock
+  if ! acquire_lock "$lock_file"; then
+    return 1
+  fi
 
   # If clone doesn't exist, create it
   if [[ ! -d "$clone_dir/.git" ]]; then
@@ -96,9 +258,10 @@ init_clone() {
   fi
 
   # Add or update source remote
+  local source_url="${GITHUB_BASE_URL}/${source_org}/${source_repo}.git"
   if ! git -C "$clone_dir" remote | grep -q "^$SOURCE_REMOTE$"; then
     log $LOG_LEVEL_DEBUG "Adding source remote"
-    if ! git -C "$clone_dir" remote add "$SOURCE_REMOTE" "https://github.com/$source_org/$source_repo.git" --quiet; then
+    if ! git -C "$clone_dir" remote add "$SOURCE_REMOTE" "$source_url" --quiet; then
       log $LOG_LEVEL_ERROR "Failed to add source remote"
       return 1
     fi
@@ -106,10 +269,9 @@ init_clone() {
     # Update source remote URL if needed
     local current_url
     current_url=$(git -C "$clone_dir" remote get-url "$SOURCE_REMOTE")
-    local expected_url="https://github.com/$source_org/$source_repo.git"
-    if [[ "$current_url" != "$expected_url" ]]; then
+    if [[ "$current_url" != "$source_url" ]]; then
       log $LOG_LEVEL_DEBUG "Updating source remote URL"
-      if ! git -C "$clone_dir" remote set-url "$SOURCE_REMOTE" "$expected_url" --quiet; then
+      if ! git -C "$clone_dir" remote set-url "$SOURCE_REMOTE" "$source_url" --quiet; then
         log $LOG_LEVEL_ERROR "Failed to update source remote URL"
         return 1
       fi
@@ -121,6 +283,8 @@ init_clone() {
     log $LOG_LEVEL_ERROR "Failed to fetch from source remote"
     return 1
   fi
+
+  return 0
 }
 
 # Check if branch exists and update it
@@ -133,8 +297,18 @@ update_branch() {
   local source_repo=$5
   local clone_dir
   clone_dir=$(get_clone_dir "$org" "$repo")
+  local lock_file="${clone_dir}.lock"
 
   log $LOG_LEVEL_DEBUG "Checking branch $branch in $org/$repo"
+
+  # Create lock file to prevent concurrent updates
+  if ! (set -o noclobber; echo "$$" > "$lock_file") 2>/dev/null; then
+    log $LOG_LEVEL_ERROR "Another process is currently updating this repository"
+    return 1
+  fi
+
+  # Ensure lock file is removed on exit
+  trap 'rm -f "$lock_file"' EXIT
 
   # Initialize or update the clone
   if ! init_clone "$org" "$repo" "$source_org" "$source_repo"; then
@@ -145,6 +319,15 @@ update_branch() {
   if ! git -C "$clone_dir" show-ref --verify --quiet "refs/heads/$branch"; then
     log $LOG_LEVEL_INFO "Branch $branch does not exist in target repository"
     return 1
+  fi
+
+  # Check for local changes before force updating
+  if ! git -C "$clone_dir" diff --quiet "origin/$branch" "$branch"; then
+    log $LOG_LEVEL_WARN "Local branch $branch has uncommitted changes. These will be lost."
+    if ! git -C "$clone_dir" reset --hard "origin/$branch"; then
+      log $LOG_LEVEL_ERROR "Failed to reset local branch"
+      return 1
+    fi
   fi
 
   # Update target branch
@@ -160,6 +343,7 @@ update_branch() {
   fi
 
   log $LOG_LEVEL_INFO "Updated branch $branch in $org/$repo"
+  return 0
 }
 
 # Sync a single pull request
@@ -170,78 +354,114 @@ sync_single_pr() {
   local target_org=$3
   local target_repo=$4
   local pr_number=$5
+  local source_pr title body head base state target_prs existing_pr target_pr_number
 
   log $LOG_LEVEL_INFO "Syncing PR #$pr_number from $source_org/$source_repo to $target_org/$target_repo"
 
   # Get source PR information
-  local source_pr
-  source_pr=$(get_pr_info "$source_org" "$source_repo" "$pr_number")
-  if [[ -z "$source_pr" ]]; then
+  if ! source_pr=$(get_pr_info "$source_org" "$source_repo" "$pr_number"); then
     log $LOG_LEVEL_ERROR "Failed to get source PR information"
     return 1
   fi
 
-  # Extract PR details
-  local title body head base state
-  title=$(echo "$source_pr" | jq -r '.title')
-  body=$(echo "$source_pr" | jq -r '.body')
-  head=$(echo "$source_pr" | jq -r '.head.ref')
-  base=$(echo "$source_pr" | jq -r '.base.ref')
-  state=$(echo "$source_pr" | jq -r '.state')
+  # Extract PR details with error handling
+  if ! title=$(echo "$source_pr" | jq -r '.title') || [[ -z "$title" ]]; then
+    log $LOG_LEVEL_ERROR "Failed to extract PR title"
+    return 1
+  fi
+
+  if ! body=$(echo "$source_pr" | jq -r '.body') || [[ -z "$body" ]]; then
+    log $LOG_LEVEL_ERROR "Failed to extract PR body"
+    return 1
+  fi
+
+  if ! head=$(echo "$source_pr" | jq -r '.head.ref') || [[ -z "$head" ]]; then
+    log $LOG_LEVEL_ERROR "Failed to extract PR head branch"
+    return 1
+  fi
+
+  if ! base=$(echo "$source_pr" | jq -r '.base.ref') || [[ -z "$base" ]]; then
+    log $LOG_LEVEL_ERROR "Failed to extract PR base branch"
+    return 1
+  fi
+
+  if ! state=$(echo "$source_pr" | jq -r '.state') || [[ -z "$state" ]]; then
+    log $LOG_LEVEL_ERROR "Failed to extract PR state"
+    return 1
+  fi
 
   # Update target branch to match source
   if ! update_branch "$target_org" "$target_repo" "$head" "$source_org" "$source_repo"; then
-    log $LOG_LEVEL_WARN "Failed to update branch $head in target repository"
+    log $LOG_LEVEL_ERROR "Failed to update branch $head in target repository"
     return 1
   fi
 
   # Check if PR already exists in target
-  local target_prs existing_pr
-  target_prs=$(list_prs "$target_org" "$target_repo")
+  if ! target_prs=$(list_prs "$target_org" "$target_repo"); then
+    log $LOG_LEVEL_ERROR "Failed to list PRs in target repository"
+    return 1
+  fi
+
   existing_pr=$(echo "$target_prs" | jq -r --arg title "$title" 'select(.title == $title)')
 
   if [[ -n "$existing_pr" ]]; then
     # Update existing PR
-    local target_pr_number
-    target_pr_number=$(echo "$existing_pr" | jq -r '.number')
+    if ! target_pr_number=$(echo "$existing_pr" | jq -r '.number') || [[ -z "$target_pr_number" ]]; then
+      log $LOG_LEVEL_ERROR "Failed to extract target PR number"
+      return 1
+    fi
+
     log $LOG_LEVEL_INFO "Updating existing PR #$target_pr_number in target repository"
-    update_pr "$target_org" "$target_repo" "$target_pr_number" "$title" "$body" "$state"
+    if ! update_pr "$target_org" "$target_repo" "$target_pr_number" "$title" "$body" "$state"; then
+      log $LOG_LEVEL_ERROR "Failed to update PR #$target_pr_number"
+      return 1
+    fi
   else
     # Create new PR
     log $LOG_LEVEL_INFO "Creating new PR in target repository"
-    create_pr "$target_org" "$target_repo" "$title" "$body" "$head" "$base"
+    if ! create_pr "$target_org" "$target_repo" "$title" "$body" "$head" "$base"; then
+      log $LOG_LEVEL_ERROR "Failed to create new PR"
+      return 1
+    fi
   fi
+
+  return 0
 }
 
-# Sync all pull requests
+# Sync all pull requests with parallel processing
 # Usage: sync_all_prs <source_org> <source_repo> <target_org> <target_repo>
 sync_all_prs() {
   local source_org=$1
   local source_repo=$2
   local target_org=$3
   local target_repo=$4
+  local pr_numbers
+  local count=0
+  local total=0
+  local completed=0
 
   log $LOG_LEVEL_INFO "Syncing all PRs from $source_org/$source_repo to $target_org/$target_repo"
 
   # Get all source PRs
-  local source_prs
-  source_prs=$(list_prs "$source_org" "$source_repo")
-  if [[ -z "$source_prs" ]]; then
-    log $LOG_LEVEL_INFO "No PRs found in source repository"
-    return 0
+  if ! pr_numbers=$(list_prs "$source_org" "$source_repo" | jq -r '.[].number'); then
+    log $LOG_LEVEL_ERROR "Failed to get PR numbers"
+    return 1
   fi
 
-  # Process PRs in parallel
-  local pr_numbers
-  pr_numbers=$(echo "$source_prs" | jq -r '.number')
-  local count=0
+  total=$(echo "$pr_numbers" | wc -l)
+  log $LOG_LEVEL_INFO "Found $total PRs to sync"
 
+  # Process PRs in parallel with progress reporting
   for pr_number in $pr_numbers; do
     sync_single_pr "$source_org" "$source_repo" "$target_org" "$target_repo" "$pr_number" &
     ((count++))
+    ((completed++))
+
+    # Show progress
+    log $LOG_LEVEL_INFO "Progress: $completed/$total PRs completed"
 
     # Limit parallel jobs
-    if [[ $count -ge $PARALLEL_JOBS ]]; then
+    if [[ $count -ge $MAX_PARALLEL_JOBS ]]; then
       wait
       count=0
     fi
@@ -249,6 +469,8 @@ sync_all_prs() {
 
   # Wait for remaining jobs
   wait
+  log $LOG_LEVEL_INFO "All PRs have been synced"
+  return 0
 }
 
 # Main sync function
@@ -275,4 +497,19 @@ sync_repository() {
 
   log $LOG_LEVEL_INFO "Repository synchronization completed"
 }
+
+# Validate repository name
+# Usage: validate_repo_name <name>
+validate_repo_name() {
+  local name=$1
+  # GitHub repository names can only contain alphanumeric characters, hyphens, and underscores
+  if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    log $LOG_LEVEL_ERROR "Invalid repository name: $name"
+    return 1
+  fi
+  return 0
+}
+
+# Setup cleanup at script start
+setup_cleanup
 
