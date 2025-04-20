@@ -20,8 +20,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bats jq shellcheck
 
-      - name: Run shellcheck
-        run: bash checkshell.sh
+      - name: Lint
+        run: ./shellcheck.sh
 
-      - name: Run BATS tests
-        run: bats src/test/bats/
+      - name: Test
+        run: ./test.sh

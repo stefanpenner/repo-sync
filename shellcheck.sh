@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-shellcheck **/*.sh
+find src -type f -name "*.sh" | xargs shellcheck

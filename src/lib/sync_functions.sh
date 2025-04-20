@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Global variables for clone management
+readonly CLONE_BASE_DIR="${HOME}/.github-sync/clones"
+readonly CLONE_MAX_AGE_DAYS=7
+readonly SOURCE_REMOTE="source"
+
 # List pull requests
 # Usage: list_prs <org> <repo> [state]
 list_prs() {
@@ -46,6 +51,117 @@ update_pr() {
     -f state="$state" | jq -r '.'
 }
 
+# Get clone directory for a specific repository
+# Usage: get_clone_dir <org> <repo>
+get_clone_dir() {
+  local org=$1
+  local repo=$2
+  echo "${CLONE_BASE_DIR}/${org}/${repo}"
+}
+
+# Clean up old clones
+cleanup_old_clones() {
+  log $LOG_LEVEL_DEBUG "Cleaning up old clones"
+  find "$CLONE_BASE_DIR" -type d -name ".git" -mtime +$CLONE_MAX_AGE_DAYS -exec rm -rf {} \;
+  find "$CLONE_BASE_DIR" -type d -empty -delete
+}
+
+# Initialize or update the clone
+# Usage: init_clone <target_org> <target_repo> <source_org> <source_repo>
+init_clone() {
+  local org=$1
+  local repo=$2
+  local source_org=$3
+  local source_repo=$4
+  local clone_dir
+  clone_dir=$(get_clone_dir "$org" "$repo")
+
+  # Create clone directory if it doesn't exist
+  mkdir -p "$clone_dir"
+
+  # If clone doesn't exist, create it
+  if [[ ! -d "$clone_dir/.git" ]]; then
+    log $LOG_LEVEL_DEBUG "Cloning target repository"
+    if ! gh repo clone "$org/$repo" "$clone_dir" -- --quiet; then
+      log $LOG_LEVEL_ERROR "Failed to clone target repository"
+      return 1
+    fi
+  else
+    # Update existing clone
+    log $LOG_LEVEL_DEBUG "Updating existing clone"
+    if ! git -C "$clone_dir" fetch origin --quiet; then
+      log $LOG_LEVEL_ERROR "Failed to update clone"
+      return 1
+    fi
+  fi
+
+  # Add or update source remote
+  if ! git -C "$clone_dir" remote | grep -q "^$SOURCE_REMOTE$"; then
+    log $LOG_LEVEL_DEBUG "Adding source remote"
+    if ! git -C "$clone_dir" remote add "$SOURCE_REMOTE" "https://github.com/$source_org/$source_repo.git" --quiet; then
+      log $LOG_LEVEL_ERROR "Failed to add source remote"
+      return 1
+    fi
+  else
+    # Update source remote URL if needed
+    local current_url
+    current_url=$(git -C "$clone_dir" remote get-url "$SOURCE_REMOTE")
+    local expected_url="https://github.com/$source_org/$source_repo.git"
+    if [[ "$current_url" != "$expected_url" ]]; then
+      log $LOG_LEVEL_DEBUG "Updating source remote URL"
+      if ! git -C "$clone_dir" remote set-url "$SOURCE_REMOTE" "$expected_url" --quiet; then
+        log $LOG_LEVEL_ERROR "Failed to update source remote URL"
+        return 1
+      fi
+    fi
+  fi
+
+  # Fetch from source remote
+  if ! git -C "$clone_dir" fetch "$SOURCE_REMOTE" --quiet; then
+    log $LOG_LEVEL_ERROR "Failed to fetch from source remote"
+    return 1
+  fi
+}
+
+# Check if branch exists and update it
+# Usage: update_branch <org> <repo> <branch> <source_org> <source_repo>
+update_branch() {
+  local org=$1
+  local repo=$2
+  local branch=$3
+  local source_org=$4
+  local source_repo=$5
+  local clone_dir
+  clone_dir=$(get_clone_dir "$org" "$repo")
+
+  log $LOG_LEVEL_DEBUG "Checking branch $branch in $org/$repo"
+
+  # Initialize or update the clone
+  if ! init_clone "$org" "$repo" "$source_org" "$source_repo"; then
+    return 1
+  fi
+
+  # Check if branch exists in target
+  if ! git -C "$clone_dir" show-ref --verify --quiet "refs/heads/$branch"; then
+    log $LOG_LEVEL_INFO "Branch $branch does not exist in target repository"
+    return 1
+  fi
+
+  # Update target branch
+  if ! git -C "$clone_dir" fetch "$SOURCE_REMOTE" "$branch:$branch" --force --quiet; then
+    log $LOG_LEVEL_ERROR "Failed to update target branch"
+    return 1
+  fi
+
+  # Push changes to target repository
+  if ! git -C "$clone_dir" push origin "$branch" --force --quiet; then
+    log $LOG_LEVEL_ERROR "Failed to push changes to target repository"
+    return 1
+  fi
+
+  log $LOG_LEVEL_INFO "Updated branch $branch in $org/$repo"
+}
+
 # Sync a single pull request
 # Usage: sync_single_pr <source_org> <source_repo> <target_org> <target_repo> <pr_number>
 sync_single_pr() {
@@ -66,21 +182,22 @@ sync_single_pr() {
   fi
 
   # Extract PR details
-  local title
+  local title body head base state
   title=$(echo "$source_pr" | jq -r '.title')
-  local body
   body=$(echo "$source_pr" | jq -r '.body')
-  local head
   head=$(echo "$source_pr" | jq -r '.head.ref')
-  local base
   base=$(echo "$source_pr" | jq -r '.base.ref')
-  local state
   state=$(echo "$source_pr" | jq -r '.state')
 
+  # Update target branch to match source
+  if ! update_branch "$target_org" "$target_repo" "$head" "$source_org" "$source_repo"; then
+    log $LOG_LEVEL_WARN "Failed to update branch $head in target repository"
+    return 1
+  fi
+
   # Check if PR already exists in target
-  local target_prs
+  local target_prs existing_pr
   target_prs=$(list_prs "$target_org" "$target_repo")
-  local existing_pr
   existing_pr=$(echo "$target_prs" | jq -r --arg title "$title" 'select(.title == $title)')
 
   if [[ -n "$existing_pr" ]]; then
@@ -146,6 +263,9 @@ sync_repository() {
   log $LOG_LEVEL_INFO "Starting repository synchronization"
   log $LOG_LEVEL_INFO "Source: $source_org/$source_repo"
   log $LOG_LEVEL_INFO "Target: $target_org/$target_repo"
+
+  # Clean up old clones at the start
+  cleanup_old_clones
 
   if [[ -n "$pr_number" ]]; then
     sync_single_pr "$source_org" "$source_repo" "$target_org" "$target_repo" "$pr_number"
