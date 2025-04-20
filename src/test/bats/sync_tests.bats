@@ -138,7 +138,7 @@ teardown() {
     mock_gh_pr_edit() {
         jq -n '{
             number: 123,
-            title: "Updated PR",
+            title: "Updated PR", 
             state: "open"
         }'
     }
@@ -196,27 +196,53 @@ teardown() {
 }
 
 @test "sync_single_pr updates existing PR" {
-    # Mock gh pr view to return existing PR
-    mock_gh_pr_view() {
-        jq -n '{
-            number: 123,
-            title: "Existing PR",
-            state: "open"
-        }'
-    }
-    
-    # Mock gh pr edit
-    mock_gh_pr_edit() {
-        jq -n '{
-            number: 123,
-            title: "Updated PR", 
-            state: open
-        }'
+    # Mock gh command
+    mock_gh() {
+        case "$*" in
+            *"pr view"*)
+                jq -n '{
+                    number: 123,
+                    title: "Existing PR",
+                    state: "open"
+                }'
+                ;;
+            *"pr edit"*)
+                jq -n '{
+                    number: 123,
+                    title: "Updated PR",
+                    state: "open"
+                }'
+                ;;
+            *"api /repos/"*"/pulls/"*)
+                jq -n '{
+                    number: 123,
+                    title: "Existing PR",
+                    state: "open"
+                }'
+                ;;
+            *"api /repos/"*"/pulls?state=open"*)
+                jq -n '[]'
+                ;;
+            *"api /repos/"*"/pulls"*"-f title="*)
+                jq -n '{
+                    number: 123,
+                    title: "Existing PR",
+                    state: "open"
+                }'
+                ;;
+            *"repo clone"*)
+                # Return success for clone command
+                return 0
+                ;;
+            *)
+                echo "ERROR: Unhandled mock_gh command: $*" >&2
+                return 1
+                ;;
+        esac
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_pr_view"
-    mock_command gh "mock_gh_pr_edit"
+    mock_command gh "mock_gh"
     
     # Call the function
     run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
@@ -358,8 +384,8 @@ teardown() {
     
      # Mock gh command
     mock_gh() {
-        case "$1" in
-            "pr" | "pr view")
+        case "$*" in
+            "pr view"* | "pr"*"view"*)
                 jq -n '{
                     number: 123,
                     title: "Test PR",
@@ -374,12 +400,31 @@ teardown() {
                     }
                 }'
                 ;;
-            "pr create")
+            "pr create"*)
                 jq -n '{
                     number: 123,
                     title: "Test PR",
                     state: "open"
                 }'
+                ;;
+            "api /repos/"*"/pulls/"*)
+                jq -n '{
+                    number: 123,
+                    title: "Test PR",
+                    body: "Test PR body", 
+                    state: "open",
+                    head: {
+                        ref: "test-branch",
+                        sha: "abc123"
+                    },
+                    base: {
+                        ref: "main"
+                    }
+                }'
+                ;;
+            *)
+                echo "ERROR: Unhandled mock_gh command: $*" >&2
+                return 1
                 ;;
         esac
     }

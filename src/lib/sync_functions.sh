@@ -180,6 +180,8 @@ get_pr_info() {
   local repo=$2
   local pr_number=$3
 
+  log $LOG_LEVEL_DEBUG "get_pr_info: [$org] [$repo] [$pr_number]"
+
   # Validate inputs
   if ! validate_repo_name "$org" || ! validate_repo_name "$repo"; then
     return 1
@@ -333,6 +335,8 @@ sync_single_pr() {
     log $LOG_LEVEL_ERROR "Failed to get source PR information"
     return 1
   fi
+
+  echo "source_pr: [$source_pr]">&2
 
   # Extract PR details with error handling
   if ! title=$(echo "$source_pr" | jq -r '.title') || [[ -z "$title" ]]; then
