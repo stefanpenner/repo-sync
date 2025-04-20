@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "name": "use-jq-for-json",
+      "description": "Use jq -n with proper indentation and unquoted keys for creating JSON objects",
+      "pattern": "(echo\\s+[\"'].*\\{.*\\}.*[\"'])|(jq\\s+-n\\s+[\"'].*\\{.*\\}.*[\"'])|(\\{.*\\})",
+      "suggestion": "Use jq -n with proper indentation and unquoted keys for creating JSON objects. For example:\n\nInstead of:\necho '{\"key\": \"value\"}'\n\nOr:\njq -n '{\"key\": \"value\"}'\n\nOr:\n{\"key\": \"value\"}\n\nUse:\njq -n '{\n    key: \"value\"\n}'",
+      "severity": "warning",
+      "language": "shell"
+    },
+    {
+      "name": "jq-format-json",
+      "description": "Format JSON objects with proper indentation and unquoted keys",
+      "pattern": "jq\\s+-n\\s+[\"']\\{\\s*\"[^\"]+\"\\s*:\\s*[^}]*\\}[\"']",
+      "suggestion": "Format JSON objects with proper indentation and unquoted keys. For example:\n\nInstead of:\njq -n '{\"key\": \"value\"}'\n\nUse:\njq -n '{\n    key: \"value\"\n}'",
+      "severity": "warning",
+      "language": "shell"
+    }
+  ]
+} 
