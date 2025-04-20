@@ -17,16 +17,9 @@ readonly VERSION="0.1.0"
 
 # Default configuration
 readonly DEFAULT_CONFIG_FILE="${HOME}/.github-sync/config.yaml"
-readonly DEFAULT_LOG_LEVEL="INFO"
-
-# Log levels
-readonly LOG_LEVEL_DEBUG=0
-readonly LOG_LEVEL_INFO=1
-readonly LOG_LEVEL_WARN=2
-readonly LOG_LEVEL_ERROR=3
 
 # Current log level (default to INFO)
-LOG_LEVEL=$LOG_LEVEL_INFO
+export LOG_LEVEL=$LOG_LEVEL_INFO
 
 # Configuration variables
 SOURCE_ORG=""
@@ -37,12 +30,11 @@ CONFIG_FILE=""
 PARALLEL_JOBS=4
 
 # Source the sync functions
-# shellcheck source=../lib/logging.sh
+# shellcheck source=src/lib/logging.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/logging.sh"
 
-source "$(dirname "$BASH_SOURCE")/../lib/logging.sh"
-
-# shellcheck source=../lib/sync_functions.sh
-source "$(dirname "$BASH_SOURCE")/../lib/sync_functions.sh"
+# shellcheck source=src/lib/sync_functions.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/sync_functions.sh"
 
 # Check for required dependencies
 check_dependencies() {
