@@ -21,7 +21,7 @@ mock_command() {
         }"
     else
         # Create mock that just echoes args
-        eval "$cmd() { echo \"Mock for $cmd called with: \$*\"; return 0; }"
+        eval "$cmd() { echo \"Mock for $cmd called with: \$*\" >&2; return 0; }"
     fi
 }
 
@@ -97,6 +97,26 @@ assert_output_not_contains() {
     if [[ "$output" == *"$unexpected"* ]]; then
         echo "Output contains unexpected string '$unexpected'"
         echo "Actual output: $output"
+        return 1
+    fi
+}
+
+# Assert that stderr contains a string
+assert_stderr_contains() {
+    local expected="$1"
+    if [[ "$stderr" != *"$expected"* ]]; then
+        echo "Stderr does not contain '$expected'" >&2
+        echo "Actual stderr: $stderr" >&2
+        return 1
+    fi
+}
+
+# Assert that stderr does not contain a string
+assert_stderr_not_contains() {
+    local unexpected="$1"
+    if [[ "$stderr" == *"$unexpected"* ]]; then
+        echo "Stderr contains unexpected string '$unexpected'"
+        echo "Actual stderr: $stderr"
         return 1
     fi
 }

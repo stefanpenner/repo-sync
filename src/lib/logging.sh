@@ -24,15 +24,19 @@ log() {
   shift
   local message=$*
   local timestamp
+  local caller_file
+  local caller_line
   timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+  caller_file=$(basename "${BASH_SOURCE[1]}")
+  caller_line=${BASH_LINENO[0]}
 
   # Only log if the message level is >= current log level
   if [[ $level -ge $LOG_LEVEL ]]; then
     case $level in
-    "$LOG_LEVEL_DEBUG") echo "[$timestamp] DEBUG: $message" >&2 ;;
-    "$LOG_LEVEL_INFO") echo "[$timestamp] INFO: $message">&2  ;;
-    "$LOG_LEVEL_WARN") echo "[$timestamp] WARN: $message" >&2 ;;
-    "$LOG_LEVEL_ERROR") echo "[$timestamp] ERROR: $message" >&2 ;;
+    "$LOG_LEVEL_DEBUG") echo "[$timestamp] DEBUG: $message $caller_file:$caller_line" >&2 ;;
+    "$LOG_LEVEL_INFO") echo "[$timestamp] INFO: $message $caller_file:$caller_line" >&2 ;;
+    "$LOG_LEVEL_WARN") echo "[$timestamp] WARN: $message $caller_file:$caller_line: " >&2 ;;
+    "$LOG_LEVEL_ERROR") echo "[$timestamp] ERROR: $message $caller_file:$caller_line: " >&2 ;;
     esac
   fi
 }

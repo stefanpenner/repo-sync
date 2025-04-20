@@ -33,6 +33,7 @@ teardown() {
 }
 
 @test "get_pr_info returns PR information" {
+    bats_require_minimum_version 1.5.0
     # Mock gh pr view response
     mock_gh() {
         local arg1="$1"
@@ -61,11 +62,12 @@ teardown() {
     mock_command gh "mock_gh"
     
     # Call the function
-    run get_pr_info "$SOURCE_ORG" "$REPO_NAME" "123"
+    run --separate-stderr get_pr_info "$SOURCE_ORG" "$REPO_NAME" "123"
     
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
@@ -74,6 +76,7 @@ teardown() {
 }
 
 @test "list_prs returns list of PRs" {
+    bats_require_minimum_version 1.5.0
     # Mock gh pr list response
     mock_gh() {
         jq -n '[
@@ -94,11 +97,12 @@ teardown() {
     mock_command gh "mock_gh"
     
     # Call the function
-    run list_prs "$SOURCE_ORG" "$REPO_NAME" "open"
+    run --separate-stderr list_prs "$SOURCE_ORG" "$REPO_NAME" "open"
     
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
         
     # Check the output
     [ "$status" -eq 0 ]
@@ -108,6 +112,7 @@ teardown() {
 }
 
 @test "create_pr creates a new PR" {
+    bats_require_minimum_version 1.5.0
     # Mock gh pr create response
     mock_gh_pr_create() {
         jq -n '{
@@ -121,11 +126,12 @@ teardown() {
     mock_command gh "mock_gh_pr_create"
     
     # Call the function
-    run create_pr "$TARGET_ORG" "$REPO_NAME" "test-branch" "main" "Test PR" "Test PR body"
+    run --separate-stderr create_pr "$TARGET_ORG" "$REPO_NAME" "test-branch" "main" "Test PR" "Test PR body"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
@@ -134,6 +140,7 @@ teardown() {
 }
 
 @test "update_pr updates an existing PR" {
+    bats_require_minimum_version 1.5.0
     # Mock gh pr edit response
     mock_gh_pr_edit() {
         jq -n '{
@@ -147,11 +154,12 @@ teardown() {
     mock_command gh "mock_gh_pr_edit"
     
     # Call the function
-    run update_pr "$TARGET_ORG" "$REPO_NAME" "123" "Updated PR" "Updated PR body"
+    run --separate-stderr update_pr "$TARGET_ORG" "$REPO_NAME" "123" "Updated PR" "Updated PR body"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
@@ -160,6 +168,7 @@ teardown() {
 }
 
 @test "sync_single_pr creates new PR if it doesn't exist" {
+    bats_require_minimum_version 1.5.0
     # Mock gh command to simulate PR doesn't exist and then create new PR
     mock_gh() {
         if [[ "$*" =~ "api /repos/$TARGET_ORG/$REPO_NAME/pulls/123" ]]; then
@@ -182,20 +191,20 @@ teardown() {
     mock_command gh "mock_gh"
     
     # Call the function
-    run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
+    run --separate-stderr sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
-
-    echo "hihihi" >&2
     [ "$(echo "$output" | jq -r '.number')" = "123" ]
 }
 
 @test "sync_single_pr updates existing PR" {
+    bats_require_minimum_version 1.5.0
     # Mock gh command
     mock_gh() {
         case "$*" in
@@ -244,12 +253,13 @@ teardown() {
     # Mock gh command
     mock_command gh "mock_gh"
     
-    # Call the function
-    run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
-        
+    # Call the function and capture stdout and stderr separately
+    run --separate-stderr sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
+    
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
@@ -258,6 +268,7 @@ teardown() {
 }
 
 @test "sync_all_prs processes all PRs" {
+    bats_require_minimum_version 1.5.0
     # Mock gh pr list to return multiple PRs
     mock_gh_pr_list() {
         jq -n '[
@@ -297,11 +308,12 @@ teardown() {
     mock_command gh "mock_gh_pr_edit"
     
     # Call the function
-    run sync_all_prs "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "open" 2
+    run --separate-stderr sync_all_prs "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "open" 2
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
@@ -309,6 +321,7 @@ teardown() {
 }
 
 @test "update_branch updates branch to latest commit" {
+    bats_require_minimum_version 1.5.0
     # Mock branch exists check
     mock_gh_branch_check() {
         jq -n '{
@@ -344,17 +357,19 @@ teardown() {
     mock_command gh "mock_gh_update_branch"
     
     # Call the function
-    run update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"
+    run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
 }
 
 @test "update_branch fails if branch does not exist" {
+    bats_require_minimum_version 1.5.0
     # Mock branch does not exist
     mock_gh_branch_check() {
         return 1
@@ -364,18 +379,19 @@ teardown() {
     mock_command gh "mock_gh_branch_check"
     
     # Call the function
-    run update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
+    run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 1 ]
 }
 
 @test "sync_single_pr_with_branch_update updates branch before syncing PR" {
-   
+    bats_require_minimum_version 1.5.0
     # Mock branch update
     mock_update_branch() {
         return 0
@@ -433,23 +449,29 @@ teardown() {
     mock_command gh "mock_gh"
     
     # Call the function
-    run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
+    run --separate-stderr sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
     [ "$status" -eq 0 ]
 }
 
 @test "get_clone_dir returns correct path" {
-    run get_clone_dir "test-org" "test-repo"
+    bats_require_minimum_version 1.5.0
+    run --separate-stderr get_clone_dir "test-org" "test-repo"
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
     [ "$status" -eq 0 ]
     [ "$output" = "${HOME}/.github-sync/clones/test-org/test-repo" ]
 }
 
 @test "cleanup_old_clones removes old clones" {
+    bats_require_minimum_version 1.5.0
     # Mock find command to simulate old clones
     mock_find() {
         echo "/old/clone/.git"
@@ -459,16 +481,18 @@ teardown() {
     # Mock rm command
     mock_command rm "true"
     
-    run cleanup_old_clones
+    run --separate-stderr cleanup_old_clones
    
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     [ "$status" -eq 0 ]
 }
 
 @test "init_clone creates new clone if none exists" {
+    bats_require_minimum_version 1.5.0
     # Mock directory checks
     mock_mkdir() {
         return 0
@@ -494,7 +518,7 @@ teardown() {
     }
     mock_command gh "mock_gh_clone"
     
-    run init_clone "$TARGET_ORG" "$REPO_NAME" "$SOURCE_ORG" "$SOURCE_REPO"
+    run --separate-stderr init_clone "$TARGET_ORG" "$REPO_NAME" "$SOURCE_ORG" "$SOURCE_REPO"
 
     # Debug output       
     echo "DEBUG: target_org: $TARGET_ORG" >&2
@@ -502,12 +526,14 @@ teardown() {
     echo "DEBUG: source_org: $SOURCE_ORG" >&2
     echo "DEBUG: source_repo: $SOURCE_REPO" >&2
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
 
     [ "$status" -eq 0 ]
 }
 
 @test "init_clone updates existing clone" {
+    bats_require_minimum_version 1.5.0
     # Mock directory checks
     mock_mkdir() {
         return 0
@@ -534,16 +560,18 @@ teardown() {
     echo "DEBUG: REPO_NAME: $REPO_NAME" >&2
     echo "DEBUG: SOURCE_ORG: $SOURCE_ORG" >&2
     echo "DEBUG: SOURCE_REPO: $SOURCE_REPO" >&2
-    run init_clone "$TARGET_ORG" "$REPO_NAME" "$SOURCE_ORG" "$SOURCE_REPO"
+    run --separate-stderr init_clone "$TARGET_ORG" "$REPO_NAME" "$SOURCE_ORG" "$SOURCE_REPO"
 
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
 
     [ "$status" -eq 0 ]
 }
 
 @test "update_branch updates branch successfully" {
+    bats_require_minimum_version 1.5.0
     # Mock init_clone
     mock_init_clone() {
         return 0
@@ -562,16 +590,18 @@ teardown() {
     }
     mock_command git "mock_git_show_ref" "mock_git_fetch" "mock_git_push"
     
-    run update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"    
+    run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"    
    
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     [ "$status" -eq 0 ]
 }
 
 @test "update_branch fails if branch doesn't exist" {
+    bats_require_minimum_version 1.5.0
     # Mock init_clone
     mock_init_clone() {
         return 0
@@ -584,11 +614,12 @@ teardown() {
     }
     mock_command git "mock_git_show_ref"
     
-    run update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
+    run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
         
     # Debug output
     echo "DEBUG: Status: $status" >&2
-    echo "DEBUG: Output: $output" >&2
+    echo "DEBUG: Stdout: $output" >&2
+    echo "DEBUG: Stderr: $stderr" >&2
    
     [ "$status" -eq 1 ]
 } 

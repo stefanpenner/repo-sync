@@ -275,7 +275,7 @@ update_branch() {
     return 1
   fi
 
-  log $LOG_LEVEL_INFO "Updated branch $branch in $org/$repo"
+  # log $LOG_LEVEL_INFO "Updated branch $branch in $org/$repo"
   return 0
 }
 
@@ -338,7 +338,7 @@ sync_single_pr() {
   fi
 
   existing_pr=$(echo "$target_prs" | jq -r --arg title "$title" 'select(.title == $title)')
-  echo "existing_pr: [$existing_pr]">&2
+
   if [[ -n "$existing_pr" ]]; then
     # Update existing PR
     if ! target_pr_number=$(echo "$existing_pr" | jq -r '.number') || [[ -z "$target_pr_number" ]]; then
@@ -353,7 +353,7 @@ sync_single_pr() {
     fi
   else
     # Create new PR
-    log $LOG_LEVEL_INFO "Creating new PR in target repository"
+    # log $LOG_LEVEL_INFO "Creating new PR in target repository" >&2
     if ! create_pr "$target_org" "$target_repo" "$title" "$body" "$head" "$base"; then
       log $LOG_LEVEL_ERROR "Failed to create new PR"
       return 1
