@@ -10,16 +10,17 @@ setup_test_env
 # shellcheck source=../../bin/repo-sync.sh
 source "$BATS_TEST_DIRNAME/../../bin/repo-sync.sh"
 
+noop() {
+  return 0
+}
 setup() {
-  mock_command gh
-  mock_command jq
-  mock_command command
+  mock_command gh "noop"
+  mock_command command "noop"
 }
 
 teardown() {
   cleanup_test_env
   unmock_command gh
-  unmock_command jq
   unmock_command command
 }
 
@@ -68,30 +69,25 @@ teardown() {
 }
 
 @test "script runs successfully with valid environment" {
-  gh() {
-    if [[ "$1" == "auth" && "$2" == "status" ]]; then
-      echo "✓ Logged in to github.com as test-user"
-      return 0
-    fi
-    return 1
+  # Mock gh auth status to return success
+  mock_gh_auth_status() {
+    echo "✓ Logged in to github.com as test-user"
+    return 0
   }
+
+  # Mock gh command with auth status handler
+  mock_command gh "mock_gh_auth_status"
   
   run main --source-org test --target-org test --repo test
   assert_success
   assert_output_contains "Starting GitHub repository synchronization"
 }
-
+  
 @test "debug mode enables verbose output" {
   export DEBUG="true"
   export LOG_LEVEL=$LOG_LEVEL_DEBUG  # Set log level to DEBUG
-  gh() {
-    if [[ "$1" == "auth" && "$2" == "status" ]]; then
-      echo "✓ Logged in to github.com as test-user"
-      return 0
-    fi
-    return 1
-  }
-  
+  mock_command "gh"
+
   run main --source-org test --target-org test --repo test
   assert_success
   

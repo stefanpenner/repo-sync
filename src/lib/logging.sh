@@ -29,8 +29,8 @@ log() {
   # Only log if the message level is >= current log level
   if [[ $level -ge $LOG_LEVEL ]]; then
     case $level in
-    "$LOG_LEVEL_DEBUG") echo "[$timestamp] DEBUG: $message" ;;
-    "$LOG_LEVEL_INFO") echo "[$timestamp] INFO: $message" ;;
+    "$LOG_LEVEL_DEBUG") echo "[$timestamp] DEBUG: $message" >&2 ;;
+    "$LOG_LEVEL_INFO") echo "[$timestamp] INFO: $message">&2  ;;
     "$LOG_LEVEL_WARN") echo "[$timestamp] WARN: $message" >&2 ;;
     "$LOG_LEVEL_ERROR") echo "[$timestamp] ERROR: $message" >&2 ;;
     esac

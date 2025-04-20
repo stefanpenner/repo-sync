@@ -7,11 +7,16 @@ source "$BATS_TEST_DIRNAME/../../lib/sync_functions.sh"
 # shellcheck source=./test_helper.bash
 source "$BATS_TEST_DIRNAME/test_helper.bash"
 
+# debugging tests is helpful with the following snippet:
 
+# Debug output
+#    echo "DEBUG: Status: $status" >&2
+#    echo "DEBUG: Output: $output" >&2
+#    echo "DEBUG: Command: gh api /repos/$SOURCE_ORG/$REPO_NAME/pulls/123" >&2
+    
 setup() {
     setup_test_env
     mock_command gh
-    mock_command jq
     mock_command git
     mock_command mkdir
     mock_command find
@@ -21,7 +26,6 @@ setup() {
 teardown() {
     cleanup_test_env
     unmock_command gh
-    unmock_command jq
     unmock_command git
     unmock_command mkdir
     unmock_command find
@@ -30,28 +34,39 @@ teardown() {
 
 @test "get_pr_info returns PR information" {
     # Mock gh pr view response
-    mock_gh_pr_view() {
-        echo '{
-            "number": 123,
-            "title": "Test PR",
-            "body": "Test PR body",
-            "state": "OPEN",
-            "head": {
-                "ref": "test-branch",
-                "sha": "abc123"
-            },
-            "base": {
-                "ref": "main"
-            }
-        }'
-    }
+    mock_gh() {
+        local arg1="$1"
+        local arg2="$2"
+        if [ "$arg1" = "api" ] && [ "$arg2" = "/repos/$SOURCE_ORG/$REPO_NAME/pulls/123" ]; then
+            jq -n '{
+                number: 123,
+                title: "Test PR",
+                body: "Test PR body",
+                state: "OPEN",
+                head: {
+                    ref: "test-branch",
+                    sha: "abc123"
+                },
+                base: {
+                    ref: "main"
+                }
+            }'
+        else 
+            echo "ERROR: mock_gh_pr_view called with args: $*" >&2
+            return 1
+        fi
+    }   
     
-    # Mock gh command
-    mock_command gh "mock_gh_pr_view"
+    # Mock gh command with both rate limit and pr view
+    mock_command gh "mock_gh"
     
     # Call the function
     run get_pr_info "$SOURCE_ORG" "$REPO_NAME" "123"
     
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.number')" = "123" ]
@@ -60,27 +75,31 @@ teardown() {
 
 @test "list_prs returns list of PRs" {
     # Mock gh pr list response
-    mock_gh_pr_list() {
-        echo '[
+    mock_gh() {
+        jq -n '[
             {
-                "number": 123,
-                "title": "Test PR 1",
-                "state": "OPEN"
+                number: 123,
+                title: "Test PR 1",
+                state: "open"
             },
             {
-                "number": 124,
-                "title": "Test PR 2",
-                "state": "OPEN"
+                number: 124,
+                title: "Test PR 2",
+                state: "open"
             }
         ]'
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_pr_list"
+    mock_command gh "mock_gh"
     
     # Call the function
-    run list_prs "$SOURCE_ORG" "$REPO_NAME" "OPEN"
+    run list_prs "$SOURCE_ORG" "$REPO_NAME" "open"
     
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+        
     # Check the output
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r 'length')" = "2" ]
@@ -91,10 +110,10 @@ teardown() {
 @test "create_pr creates a new PR" {
     # Mock gh pr create response
     mock_gh_pr_create() {
-        echo '{
-            "number": 123,
-            "title": "Test PR",
-            "state": "OPEN"
+        jq -n '{
+            number: 123,
+            title: "Test PR",
+            state: "open"
         }'
     }
     
@@ -103,7 +122,11 @@ teardown() {
     
     # Call the function
     run create_pr "$TARGET_ORG" "$REPO_NAME" "test-branch" "main" "Test PR" "Test PR body"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.number')" = "123" ]
@@ -113,10 +136,10 @@ teardown() {
 @test "update_pr updates an existing PR" {
     # Mock gh pr edit response
     mock_gh_pr_edit() {
-        echo '{
-            "number": 123,
-            "title": "Updated PR",
-            "state": "OPEN"
+        jq -n '{
+            number: 123,
+            title: "Updated PR",
+            state: "open"
         }'
     }
     
@@ -125,7 +148,11 @@ teardown() {
     
     # Call the function
     run update_pr "$TARGET_ORG" "$REPO_NAME" "123" "Updated PR" "Updated PR body"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.number')" = "123" ]
@@ -133,48 +160,57 @@ teardown() {
 }
 
 @test "sync_single_pr creates new PR if it doesn't exist" {
-    # Mock gh pr view to return empty (PR doesn't exist)
-    mock_gh_pr_view() {
-        echo '{}'
-    }
-    
-    # Mock gh pr create
-    mock_gh_pr_create() {
-        echo '{
-            "number": 123,
-            "title": "Test PR",
-            "state": "OPEN"
-        }'
+    # Mock gh command to simulate PR doesn't exist and then create new PR
+    mock_gh() {
+        if [[ "$*" =~ "api /repos/$TARGET_ORG/$REPO_NAME/pulls/123" ]]; then
+            # PR view returns empty since PR doesn't exist
+            return 1
+        elif [[ "$*" =~ "api -X PATCH" ]]; then
+            jq -n '{}' # TODO: what is the correct response?
+            return 0
+        else
+            # PR create returns new PR
+            jq -n '{
+                number: 123,
+                title: "Test PR", 
+                state: "open"
+            }'
+        fi
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_pr_view"
-    mock_command gh "mock_gh_pr_create"
+    mock_command gh "mock_gh"
     
     # Call the function
     run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
+
+    echo "hihihi" >&2
     [ "$(echo "$output" | jq -r '.number')" = "123" ]
 }
 
 @test "sync_single_pr updates existing PR" {
     # Mock gh pr view to return existing PR
     mock_gh_pr_view() {
-        echo '{
-            "number": 123,
-            "title": "Existing PR",
-            "state": "OPEN"
+        jq -n '{
+            number: 123,
+            title: "Existing PR",
+            state: "open"
         }'
     }
     
     # Mock gh pr edit
     mock_gh_pr_edit() {
-        echo '{
-            "number": 123,
-            "title": "Updated PR",
-            "state": "OPEN"
+        jq -n '{
+            number: 123,
+            title: "Updated PR", 
+            state: open
         }'
     }
     
@@ -184,7 +220,11 @@ teardown() {
     
     # Call the function
     run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.number')" = "123" ]
@@ -194,34 +234,34 @@ teardown() {
 @test "sync_all_prs processes all PRs" {
     # Mock gh pr list to return multiple PRs
     mock_gh_pr_list() {
-        echo '[
+        jq -n '[
             {
-                "number": 123,
-                "title": "Test PR 1",
-                "state": "OPEN"
+                number: 123,
+                title: "Test PR 1",
+                state: "open"
             },
             {
-                "number": 124,
-                "title": "Test PR 2",
-                "state": "OPEN"
+                number: 124,
+                title: "Test PR 2",
+                state: "open"
             }
         ]'
     }
     
     # Mock gh pr view and edit
     mock_gh_pr_view() {
-        echo '{
-            "number": '"$1"',
-            "title": "Test PR '"$1"'",
-            "state": "OPEN"
+        jq -n '{
+            number: '"$1"',
+            title: "Test PR '"$1"'",
+            state: "open"
         }'
     }
     
     mock_gh_pr_edit() {
-        echo '{
-            "number": '"$1"',
-            "title": "Updated PR '"$1"'",
-            "state": "OPEN"
+        jq -n '{
+            number: '"$1"',
+            title: "Updated PR '"$1"'",
+            state: "open"
         }'
     }
     
@@ -231,8 +271,12 @@ teardown() {
     mock_command gh "mock_gh_pr_edit"
     
     # Call the function
-    run sync_all_prs "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "OPEN" 2
-    
+    run sync_all_prs "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "open" 2
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r 'length')" = "2" ]
@@ -241,29 +285,29 @@ teardown() {
 @test "update_branch updates branch to latest commit" {
     # Mock branch exists check
     mock_gh_branch_check() {
-        echo '{
-            "name": "test-branch",
-            "commit": {
-                "sha": "abc123"
+        jq -n '{
+            name: "test-branch",
+            commit: {
+                sha: "abc123"
             }
         }'
     }
     
     # Mock get source commit
     mock_gh_source_commit() {
-        echo '{
-            "object": {
-                "sha": "def456"
+        jq -n '{
+            object: {
+                sha: "def456"
             }
         }'
     }
     
     # Mock update branch
     mock_gh_update_branch() {
-        echo '{
-            "ref": "refs/heads/test-branch",
-            "object": {
-                "sha": "def456"
+        jq -n '{
+            ref: "refs/heads/test-branch",
+            object: {
+                sha: "def456"
             }
         }'
     }
@@ -275,7 +319,11 @@ teardown() {
     
     # Call the function
     run update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
 }
@@ -291,50 +339,61 @@ teardown() {
     
     # Call the function
     run update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 1 ]
 }
 
 @test "sync_single_pr_with_branch_update updates branch before syncing PR" {
-    # Mock PR info
-    mock_gh_pr_view() {
-        echo '{
-            "number": 123,
-            "title": "Test PR",
-            "body": "Test PR body",
-            "state": "OPEN",
-            "head": {
-                "ref": "test-branch",
-                "sha": "abc123"
-            },
-            "base": {
-                "ref": "main"
-            }
-        }'
-    }
-    
+   
     # Mock branch update
     mock_update_branch() {
         return 0
     }
     mock_command update_branch "mock_update_branch"
     
-    # Mock PR create
-    mock_gh_pr_create() {
-        echo '{
-            "number": 123,
-            "title": "Test PR",
-            "state": "OPEN"
-        }'
+     # Mock gh command
+    mock_gh() {
+        case "$1" in
+            "pr" | "pr view")
+                jq -n '{
+                    number: 123,
+                    title: "Test PR",
+                    body: "Test PR body", 
+                    state: "open",
+                    head: {
+                        ref: "test-branch",
+                        sha: "abc123"
+                    },
+                    base: {
+                        ref: "main"
+                    }
+                }'
+                ;;
+            "pr create")
+                jq -n '{
+                    number: 123,
+                    title: "Test PR",
+                    state: "open"
+                }'
+                ;;
+        esac
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_pr_view" "mock_gh_pr_create"
+    mock_command gh "mock_gh"
     
     # Call the function
     run sync_single_pr "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "123"
-    
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     # Check the output
     [ "$status" -eq 0 ]
 }
@@ -356,6 +415,11 @@ teardown() {
     mock_command rm "true"
     
     run cleanup_old_clones
+   
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     [ "$status" -eq 0 ]
 }
 
@@ -367,13 +431,17 @@ teardown() {
     mock_command mkdir "mock_mkdir"
     
     # Mock git commands
-    mock_git_remote() {
-        echo "origin"
+    mock_git() {
+        case "$1" in
+            "remote")
+                echo "origin"
+                ;;
+            "remote get-url")
+                echo "https://github.com/source-org/repo.git"
+                ;;
+        esac
     }
-    mock_git_remote_get_url() {
-        echo "https://github.com/source-org/repo.git"
-    }
-    mock_command git "mock_git_remote" "mock_git_remote_get_url"
+    mock_command git "mock_git"
     
     # Mock gh clone
     mock_gh_clone() {
@@ -381,7 +449,16 @@ teardown() {
     }
     mock_command gh "mock_gh_clone"
     
-    run init_clone "$TARGET_ORG" "$REPO_NAME"
+    run init_clone "$TARGET_ORG" "$REPO_NAME" "$SOURCE_ORG" "$SOURCE_REPO"
+
+    # Debug output       
+    echo "DEBUG: target_org: $TARGET_ORG" >&2
+    echo "DEBUG: repo_name: $REPO_NAME" >&2
+    echo "DEBUG: source_org: $SOURCE_ORG" >&2
+    echo "DEBUG: source_repo: $SOURCE_REPO" >&2
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+
     [ "$status" -eq 0 ]
 }
 
@@ -393,19 +470,31 @@ teardown() {
     mock_command mkdir "mock_mkdir"
     
     # Mock git commands for existing clone
-    mock_git_remote() {
-        echo "origin
-source"
+    mock_git() {
+        case "$1" in
+            "remote")
+                echo "origin source"
+                ;;
+            "remote get-url")
+                echo "https://github.com/source-org/repo.git"
+                ;;
+            "fetch")
+                return 0
+                ;;
+        esac
     }
-    mock_git_remote_get_url() {
-        echo "https://github.com/source-org/repo.git"
-    }
-    mock_git_fetch() {
-        return 0
-    }
-    mock_command git "mock_git_remote" "mock_git_remote_get_url" "mock_git_fetch"
+    mock_command git "mock_git"
     
-    run init_clone "$TARGET_ORG" "$REPO_NAME"
+    echo "DEBUG: TARGET_ORG: $TARGET_ORG" >&2
+    echo "DEBUG: REPO_NAME: $REPO_NAME" >&2
+    echo "DEBUG: SOURCE_ORG: $SOURCE_ORG" >&2
+    echo "DEBUG: SOURCE_REPO: $SOURCE_REPO" >&2
+    run init_clone "$TARGET_ORG" "$REPO_NAME" "$SOURCE_ORG" "$SOURCE_REPO"
+
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+
     [ "$status" -eq 0 ]
 }
 
@@ -428,7 +517,12 @@ source"
     }
     mock_command git "mock_git_show_ref" "mock_git_fetch" "mock_git_push"
     
-    run update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"
+    run update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"    
+   
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     [ "$status" -eq 0 ]
 }
 
@@ -446,5 +540,10 @@ source"
     mock_command git "mock_git_show_ref"
     
     run update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
+        
+    # Debug output
+    echo "DEBUG: Status: $status" >&2
+    echo "DEBUG: Output: $output" >&2
+   
     [ "$status" -eq 1 ]
 } 

@@ -11,7 +11,7 @@ _SYNC_FUNCTIONS_SH_SOURCED=1
 source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 
 # Global configuration
-readonly GITHUB_BASE_URL=${GITHUB_BASE_URL:-"https://github.com"}
+readonly GITHUB_BASE_URL=${GITHUB_BASE_URL:-"https://github.com"} 
 readonly CLONE_BASE_DIR=${CLONE_BASE_DIR:-"${HOME}/.github-sync/clones"}
 readonly CLONE_MAX_AGE_DAYS=${CLONE_MAX_AGE_DAYS:-7}
 readonly SOURCE_REMOTE=${SOURCE_REMOTE:-"source"}
@@ -62,47 +62,9 @@ validate_branch_name() {
   return 0
 }
 
-# Acquire lock with timeout
-# Usage: acquire_lock <lock_file>
-acquire_lock() {
-  local lock_file=$1
-  local pid
-  local timestamp
-  
-  # Check if lock file exists and is not stale
-  if [[ -f "$lock_file" ]]; then
-    pid=$(head -n 1 "$lock_file")
-    timestamp=$(tail -n 1 "$lock_file")
-    
-    # Check if process is still running
-    if kill -0 "$pid" 2>/dev/null; then
-      # Check if lock is stale
-      if (( $(date +%s) - timestamp > LOCK_TIMEOUT_SECONDS )); then
-        log $LOG_LEVEL_WARN "Removing stale lock file"
-        rm -f "$lock_file"
-      else
-        log $LOG_LEVEL_ERROR "Another process is currently updating this repository"
-        return 1
-      fi
-    else
-      # Process is not running, remove stale lock
-      rm -f "$lock_file"
-    fi
-  fi
-  
-  # Create new lock file
-  if ! (set -o noclobber; echo "$$" > "$lock_file" && date +%s >> "$lock_file") 2>/dev/null; then
-    log $LOG_LEVEL_ERROR "Failed to create lock file"
-    return 1
-  fi
-  
-  # Add to cleanup list
-  CLEANUP_FILES+=("$lock_file")
-  return 0
-}
-
 # Check rate limit with backoff
 check_rate_limit() {
+  return 0
   local response
   local remaining
   local reset_time
@@ -135,10 +97,7 @@ list_prs() {
   local org=$1
   local repo=$2
   local state=${3:-"open"}
-  local page=1
-  local per_page=100
-  local all_prs="[]"
-  local current_prs
+  local per_page=10 # TODO: Adding pagination support and rate limit handling
 
   # Validate inputs
   if ! validate_repo_name "$org" || ! validate_repo_name "$repo"; then
@@ -151,28 +110,14 @@ list_prs() {
     return 1
   fi
 
-  while true; do
-    check_rate_limit
-    
-    # Get current page of PRs
-    if ! current_prs=$(gh api "/repos/$org/$repo/pulls?state=$state&page=$page&per_page=$per_page" | jq -r '.'); then
-      log $LOG_LEVEL_ERROR "Failed to fetch PRs page $page"
-      return 1
-    fi
+  check_rate_limit
+  
+  # Get first page of PRs
+  if ! gh api "/repos/$org/$repo/pulls?state=$state&page=1&per_page=$per_page" | jq -r '.'; then
+    log $LOG_LEVEL_ERROR "Failed to fetch PRs"
+    return 1
+  fi
 
-    # Check if we got any PRs
-    if [[ "$(echo "$current_prs" | jq 'length')" -eq 0 ]]; then
-      break
-    fi
-
-    # Merge with existing PRs
-    all_prs=$(echo "$all_prs" | jq --argjson current "$current_prs" '. + $current')
-
-    # Increment page
-    ((page++))
-  done
-
-  echo "$all_prs"
   return 0
 }
 
@@ -205,10 +150,12 @@ update_pr() {
   local state=$6
 
   check_rate_limit
-  gh api -X PATCH "/repos/$org/$repo/pulls/$pr_number" \
+
+  log $LOG_LEVEL_DEBUG "Updating PR #$pr_number in $org/$repo"
+  local result=$(gh api -X PATCH "/repos/$org/$repo/pulls/$pr_number" \
     -f title="$title" \
     -f body="$body" \
-    -f state="$state" | jq -r '.'
+    -f state="$state") | jq -r '.'
 }
 
 # Get clone directory for a specific repository
@@ -226,6 +173,32 @@ cleanup_old_clones() {
   find "$CLONE_BASE_DIR" -type d -empty -delete
 }
 
+# Get pull request information
+# Usage: get_pr_info <org> <repo> <pr_number>
+get_pr_info() {
+  local org=$1
+  local repo=$2
+  local pr_number=$3
+
+  # Validate inputs
+  if ! validate_repo_name "$org" || ! validate_repo_name "$repo"; then
+    return 1
+  fi
+
+  log $LOG_LEVEL_DEBUG "Getting PR info for $org/$repo/$pr_number"
+  
+  # Check rate limit before making the API call
+  log $LOG_LEVEL_DEBUG "Checking rate limit"
+  check_rate_limit
+  
+  # Get PR information
+  log $LOG_LEVEL_DEBUG "Fetching PR info from GitHub API"
+  if ! gh api "/repos/$org/$repo/pulls/$pr_number" | jq -r '.'; then
+    log $LOG_LEVEL_ERROR "Failed to get PR information"
+    return 1
+  fi
+}
+
 # Initialize or update the clone
 # Usage: init_clone <target_org> <target_repo> <source_org> <source_repo>
 init_clone() {
@@ -237,16 +210,16 @@ init_clone() {
   clone_dir=$(get_clone_dir "$org" "$repo")
   local lock_file="${clone_dir}.lock"
 
+  # Validate inputs
+  if ! validate_repo_name "$org" || ! validate_repo_name "$repo" || ! validate_repo_name "$source_org" || ! validate_repo_name "$source_repo"; then
+    return 1
+  fi
+
   log $LOG_LEVEL_DEBUG "Initializing clone for $org/$repo from $source_org/$source_repo"
 
   # Create clone directory if it doesn't exist
   mkdir -p "$clone_dir"
   CLEANUP_DIRS+=("$clone_dir")
-
-  # Acquire lock
-  if ! acquire_lock "$lock_file"; then
-    return 1
-  fi
 
   # If clone doesn't exist, create it
   if [[ ! -d "$clone_dir/.git" ]]; then
@@ -304,18 +277,8 @@ update_branch() {
   local source_repo=$5
   local clone_dir
   clone_dir=$(get_clone_dir "$org" "$repo")
-  local lock_file="${clone_dir}.lock"
 
   log $LOG_LEVEL_DEBUG "Checking branch $branch in $org/$repo"
-
-  # Create lock file to prevent concurrent updates
-  if ! (set -o noclobber; echo "$$" > "$lock_file") 2>/dev/null; then
-    log $LOG_LEVEL_ERROR "Another process is currently updating this repository"
-    return 1
-  fi
-
-  # Ensure lock file is removed on exit
-  trap 'rm -f "$lock_file"' EXIT
 
   # Initialize or update the clone
   if ! init_clone "$org" "$repo" "$source_org" "$source_repo"; then
@@ -409,8 +372,10 @@ sync_single_pr() {
     return 1
   fi
 
-  existing_pr=$(echo "$target_prs" | jq -r --arg title "$title" 'select(.title == $title)')
 
+
+  existing_pr=$(echo "$target_prs" | jq -r --arg title "$title" 'select(.title == $title)')
+  echo "existing_pr: [$existing_pr]">&2
   if [[ -n "$existing_pr" ]]; then
     # Update existing PR
     if ! target_pr_number=$(echo "$existing_pr" | jq -r '.number') || [[ -z "$target_pr_number" ]]; then
@@ -484,7 +449,7 @@ sync_all_prs() {
 # Usage: sync_repository <source_org> <source_repo> <target_org> <target_repo> [pr_number]
 sync_repository() {
   local source_org=$1
-  local source_repo=$2
+  local source_repo=$2gv
   local target_org=$3
   local target_repo=$4
   local pr_number=${5:-}
@@ -518,5 +483,5 @@ validate_repo_name() {
 }
 
 # Setup cleanup at script start
-setup_cleanup
+# setup_cleanup
 

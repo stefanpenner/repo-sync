@@ -11,25 +11,17 @@ load_script() {
 
 # Mock command function
 mock_command() {
-    local cmd=$1
-    local mock_func=${2:-}
+    local cmd="$1"
+    local mock_func="${2:-}"
     
-    # Create a function to handle the mock
     if [[ -n "$mock_func" ]]; then
+        # Create mock that handles gh api and other subcommands
         eval "$cmd() {
-            if [[ \$1 == \"api\" ]]; then
-                shift
-                \$mock_func \"\$@\"
-            else
-                echo \"Mock for $cmd called with: \$*\"
-            fi
+            $mock_func \"\$@\"
         }"
     else
-        # Default mock that just echoes the command and arguments
-        eval "$cmd() {
-            echo \"Mock for $cmd called with: \$*\"
-            return 0
-        }"
+        # Create mock that just echoes args
+        eval "$cmd() { echo \"Mock for $cmd called with: \$*\"; return 0; }"
     fi
 }
 
@@ -113,7 +105,9 @@ assert_output_not_contains() {
 setup_test_env() {
     # Set up test environment variables
     export SOURCE_ORG="test-source-org"
+    export SOURCE_REPO="test-source-repo"
     export TARGET_ORG="test-target-org"
+    export TARGET_REPO="test-target-repo"
     export REPO_NAME="test-repo"
     export GITHUB_TOKEN="test-token"
     
