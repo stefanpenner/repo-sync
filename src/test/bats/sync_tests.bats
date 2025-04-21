@@ -198,7 +198,6 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
    
-    echo "X: "$(echo "$output" | jq -r '.')"" >&2
     # Check the output
     assert_equal "$status" 0
     assert_equal "123" "$(echo "$output" | jq -r '.number')"
@@ -264,8 +263,10 @@ teardown() {
    
     # Check the output
     assert_equal "$status" 0
-    assert_equal "123" "$(echo "$output" | jq -r '.number')"
-    assert_equal "Updated PR" "$(echo "$output" | jq -r '.title')"
+    assert_json_match "$output" '{
+      "number": 123,
+      "title": "Updated PR"
+    }'
 }
 
 @test "sync_all_prs processes all PRs" {

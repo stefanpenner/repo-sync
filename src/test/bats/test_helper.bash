@@ -138,6 +138,36 @@ assert_equal() {
     fi
 }
 
+# Assert that JSON values match
+assert_json_match() {
+    local expected="$1"
+    local actual="$2"
+    local message="${3:-}"
+
+    # Convert expected to JSON if it's not already
+    local expected_json
+    if [[ "$expected" =~ ^\{.*\}$ || "$expected" =~ ^\[.*\]$ ]]; then
+        # Already looks like JSON
+        expected_json="$expected"
+    else
+        # Try to convert using jq
+        expected_json=$(jq -n "$expected" 2>/dev/null || echo "$expected")
+    fi
+
+    # Use jq to compare the JSON values
+    if ! jq --argjson expected "$expected_json" --argjson actual "$actual" -n '$expected == $actual' >/dev/null 2>&1; then
+        echo "Assertion failed: JSON values do not match" >&2
+        if [[ -n "$message" ]]; then
+            echo "Message: $message" >&2
+        fi
+        echo "Expected:" >&2
+        echo "$expected_json" | jq '.' >&2
+        echo "Actual:" >&2
+        echo "$actual" | jq '.' >&2
+        return 1
+    fi
+}
+
 # Test environment setup
 setup_test_env() {
     # Set up test environment variables

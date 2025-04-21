@@ -293,13 +293,13 @@ sync_single_pr() {
 
   # Get source PR information
   # TODO: maybe we will use this data later
-  if ! get_pr_info "$source_org" "$source_repo" "$pr_number"; then
+  if ! get_pr_info "$source_org" "$source_repo" "$pr_number" > /dev/null; then
     log $LOG_LEVEL_ERROR "Failed to get source PR information"
     return 1
   fi
 
   # Update target branch to match source
-  if ! update_branch "$target_org" "$target_repo" "$head" "$source_org" "$source_repo"; then
+  if ! update_branch "$target_org" "$target_repo" "$head" "$source_org" "$source_repo" > /dev/null; then
     log $LOG_LEVEL_ERROR "Failed to update branch $head in target repository"
     return 1
   fi
