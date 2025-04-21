@@ -96,6 +96,6 @@ source "$BATS_TEST_DIRNAME/../../lib/logging.sh"
 }
 
 @test "test logging" {
-    run --separate-stderr some_command
+    run -127 --separate-stderr some_command
     assert_stderr_contains "ome_command: command not found"
 }
