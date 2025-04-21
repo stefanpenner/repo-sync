@@ -121,6 +121,23 @@ assert_stderr_not_contains() {
     fi
 }
 
+# Assert that two values are equal
+assert_equal() {
+    local expected="$1"
+    local actual="$2"
+    local message="${3:-}"
+
+    if [[ "$actual" != "$expected" ]]; then
+        echo "Assertion failed: values are not equal" >&2
+        if [[ -n "$message" ]]; then
+            echo "Message: $message" >&2
+        fi
+        echo "Expected: '$expected'" >&2
+        echo "Actual:   '$actual'" >&2
+        return 1
+    fi
+}
+
 # Test environment setup
 setup_test_env() {
     # Set up test environment variables

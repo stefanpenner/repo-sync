@@ -19,9 +19,9 @@ source "$BATS_TEST_DIRNAME/../../bin/repo-sync.sh"
   parse_args "${args[@]}"
   
   # Check that the variables were set correctly
-  [ "$SOURCE_ORG" = "test-source" ]
-  [ "$TARGET_ORG" = "test-target" ]
-  [ "$REPO_NAME" = "test-repo" ]
+  assert_equal "$SOURCE_ORG" "test-source"
+  assert_equal "$TARGET_ORG" "test-target"
+  assert_equal "$REPO_NAME" "test-repo"
 }
 
 @test "parse_args fails with missing required arguments" {
@@ -43,7 +43,7 @@ source "$BATS_TEST_DIRNAME/../../bin/repo-sync.sh"
   parse_args "${args[@]}"
   
   # Check that the PR number was set correctly
-  [ "$PR_NUMBER" = "123" ]
+  assert_equal "$PR_NUMBER" "123"
 }
 
 @test "parse_args handles configuration file" {
@@ -54,7 +54,7 @@ source "$BATS_TEST_DIRNAME/../../bin/repo-sync.sh"
   parse_args "${args[@]}"
   
   # Check that the config file was set correctly
-  [ "$CONFIG_FILE" = "test-config.yaml" ]
+  assert_equal "$CONFIG_FILE" "test-config.yaml"
 }
 
 @test "parse_args handles parallel jobs" {
@@ -65,5 +65,5 @@ source "$BATS_TEST_DIRNAME/../../bin/repo-sync.sh"
   parse_args "${args[@]}"
   
   # Check that the parallel jobs was set correctly
-  [ "$PARALLEL_JOBS" = "8" ]
+  assert_equal "$PARALLEL_JOBS" "8"
 }

@@ -198,9 +198,10 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
    
+    echo "X: "$(echo "$output" | jq -r '.')"" >&2
     # Check the output
-    [ "$status" -eq 0 ]
-    [ "$(echo "$output" | jq -r '.number')" = "123" ]
+    assert_equal "$status" 0
+    assert_equal "123" "$(echo "$output" | jq -r '.number')"
 }
 
 @test "sync_single_pr updates existing PR" {
@@ -262,9 +263,9 @@ teardown() {
     echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
-    [ "$status" -eq 0 ]
-    [ "$(echo "$output" | jq -r '.number')" = "123" ]
-    [ "$(echo "$output" | jq -r '.title')" = "Updated PR" ]
+    assert_equal "$status" 0
+    assert_equal "123" "$(echo "$output" | jq -r '.number')"
+    assert_equal "Updated PR" "$(echo "$output" | jq -r '.title')"
 }
 
 @test "sync_all_prs processes all PRs" {
@@ -316,8 +317,8 @@ teardown() {
     echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
-    [ "$status" -eq 0 ]
-    [ "$(echo "$output" | jq -r 'length')" = "2" ]
+    assert_equal "$status" 0
+    assert_equal "2" "$(echo "$output" | jq -r 'length')"
 }
 
 @test "update_branch updates branch to latest commit" {
@@ -365,7 +366,7 @@ teardown() {
     echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
-    [ "$status" -eq 0 ]
+    assert_equal "$status" 0
 }
 
 @test "update_branch fails if branch does not exist" {
@@ -387,7 +388,7 @@ teardown() {
     echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
-    [ "$status" -eq 1 ]
+    assert_equal "$status" 1
 }
 
 @test "sync_single_pr_with_branch_update updates branch before syncing PR" {
@@ -457,7 +458,7 @@ teardown() {
     echo "DEBUG: Stderr: $stderr" >&2
    
     # Check the output
-    [ "$status" -eq 0 ]
+    assert_equal "$status" 0
 }
 
 @test "get_clone_dir returns correct path" {
@@ -466,8 +467,8 @@ teardown() {
     echo "DEBUG: Status: $status" >&2
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
-    [ "$status" -eq 0 ]
-    [ "$output" = "${HOME}/.github-sync/clones/test-org/test-repo" ]
+    assert_equal "$status" 0
+    assert_equal "$output" "${HOME}/.github-sync/clones/test-org/test-repo"
 }
 
 @test "cleanup_old_clones removes old clones" {
@@ -488,7 +489,7 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
    
-    [ "$status" -eq 0 ]
+    assert_equal "$status" 0
 }
 
 @test "init_clone creates new clone if none exists" {
@@ -529,7 +530,7 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
 
-    [ "$status" -eq 0 ]
+    assert_equal "$status" 0
 }
 
 @test "init_clone updates existing clone" {
@@ -567,7 +568,7 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
 
-    [ "$status" -eq 0 ]
+    assert_equal "$status" 0
 }
 
 @test "update_branch updates branch successfully" {
@@ -597,7 +598,7 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
    
-    [ "$status" -eq 0 ]
+    assert_equal "$status" 0
 }
 
 @test "update_branch fails if branch doesn't exist" {
@@ -621,5 +622,5 @@ teardown() {
     echo "DEBUG: Stdout: $output" >&2
     echo "DEBUG: Stderr: $stderr" >&2
    
-    [ "$status" -eq 1 ]
+    assert_equal "$status" 1
 } 

@@ -297,34 +297,6 @@ sync_single_pr() {
     return 1
   fi
 
-  echo "source_pr: [$source_pr]">&2
-
-  # Extract PR details with error handling
-  if ! title=$(echo "$source_pr" | jq -r '.title') || [[ -z "$title" ]]; then
-    log $LOG_LEVEL_ERROR "Failed to extract PR title"
-    return 1
-  fi
-
-  if ! body=$(echo "$source_pr" | jq -r '.body') || [[ -z "$body" ]]; then
-    log $LOG_LEVEL_ERROR "Failed to extract PR body"
-    return 1
-  fi
-
-  if ! head=$(echo "$source_pr" | jq -r '.head.ref') || [[ -z "$head" ]]; then
-    log $LOG_LEVEL_ERROR "Failed to extract PR head branch"
-    return 1
-  fi
-
-  if ! base=$(echo "$source_pr" | jq -r '.base.ref') || [[ -z "$base" ]]; then
-    log $LOG_LEVEL_ERROR "Failed to extract PR base branch"
-    return 1
-  fi
-
-  if ! state=$(echo "$source_pr" | jq -r '.state') || [[ -z "$state" ]]; then
-    log $LOG_LEVEL_ERROR "Failed to extract PR state"
-    return 1
-  fi
-
   # Update target branch to match source
   if ! update_branch "$target_org" "$target_repo" "$head" "$source_org" "$source_repo"; then
     log $LOG_LEVEL_ERROR "Failed to update branch $head in target repository"
