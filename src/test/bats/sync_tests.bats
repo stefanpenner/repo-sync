@@ -114,7 +114,7 @@ teardown() {
 @test "create_pr creates a new PR" {
     bats_require_minimum_version 1.5.0
     # Mock gh pr create response
-    mock_gh_pr_create() {
+    mock_gh() {
         jq -n '{
             number: 123,
             title: "Test PR",
@@ -123,7 +123,7 @@ teardown() {
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_pr_create"
+    mock_command gh "mock_gh"
     
     # Call the function
     run --separate-stderr create_pr "$TARGET_ORG" "$REPO_NAME" "test-branch" "main" "Test PR" "Test PR body"
@@ -142,7 +142,7 @@ teardown() {
 @test "update_pr updates an existing PR" {
     bats_require_minimum_version 1.5.0
     # Mock gh pr edit response
-    mock_gh_pr_edit() {
+    mock_gh() {
         jq -n '{
             number: 123,
             title: "Updated PR", 
@@ -151,7 +151,7 @@ teardown() {
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_pr_edit"
+    mock_command gh "mock_gh"
     
     # Call the function
     run --separate-stderr update_pr "$TARGET_ORG" "$REPO_NAME" "123" "Updated PR" "Updated PR body"
@@ -271,43 +271,44 @@ teardown() {
 
 @test "sync_all_prs processes all PRs" {
     bats_require_minimum_version 1.5.0
-    # Mock gh pr list to return multiple PRs
-    mock_gh_pr_list() {
-        jq -n '[
-            {
-                number: 123,
-                title: "Test PR 1",
-                state: "open"
-            },
-            {
-                number: 124,
-                title: "Test PR 2",
-                state: "open"
-            }
-        ]'
+    # Mock gh command to handle PR list, view and edit
+    mock_gh() {
+        case "$*" in
+            *"pr list"*)
+                jq -n '[
+                    {
+                        number: 123,
+                        title: "Test PR 1", 
+                        state: "open"
+                    },
+                    {
+                        number: 124,
+                        title: "Test PR 2",
+                        state: "open"
+                    }
+                ]'
+                ;;
+            *"pr view"*)
+                local pr_number=$(echo "$*" | grep -o '[0-9]\+')
+                jq -n '{
+                    number: '"$pr_number"',
+                    title: "Test PR '"$pr_number"'",
+                    state: "open"
+                }'
+                ;;
+            *"pr edit"*)
+                local pr_number=$(echo "$*" | grep -o '[0-9]\+')
+                jq -n '{
+                    number: '"$pr_number"',
+                    title: "Updated PR '"$pr_number"'",
+                    state: "open"
+                }'
+                ;;
+        esac
     }
-    
-    # Mock gh pr view and edit
-    mock_gh_pr_view() {
-        jq -n '{
-            number: '"$1"',
-            title: "Test PR '"$1"'",
-            state: "open"
-        }'
-    }
-    
-    mock_gh_pr_edit() {
-        jq -n '{
-            number: '"$1"',
-            title: "Updated PR '"$1"'",
-            state: "open"
-        }'
-    }
-    
+
     # Mock gh command
-    mock_command gh "mock_gh_pr_list"
-    mock_command gh "mock_gh_pr_view"
-    mock_command gh "mock_gh_pr_edit"
+    mock_command gh "mock_gh"
     
     # Call the function
     run --separate-stderr sync_all_prs "$SOURCE_ORG" "$REPO_NAME" "$TARGET_ORG" "$REPO_NAME" "open" 2
@@ -319,44 +320,48 @@ teardown() {
    
     # Check the output
     assert_equal "$status" 0
-    assert_equal "2" "$(echo "$output" | jq -r 'length')"
+    assert_json_match "$output" '[
+      {
+        "number": 123,
+        "title": "Updated PR 1"
+      },
+    ]'
 }
 
 @test "update_branch updates branch to latest commit" {
     bats_require_minimum_version 1.5.0
     # Mock branch exists check
-    mock_gh_branch_check() {
-        jq -n '{
-            name: "test-branch",
-            commit: {
-                sha: "abc123"
-            }
-        }'
-    }
-    
-    # Mock get source commit
-    mock_gh_source_commit() {
-        jq -n '{
-            object: {
-                sha: "def456"
-            }
-        }'
-    }
-    
-    # Mock update branch
-    mock_gh_update_branch() {
-        jq -n '{
-            ref: "refs/heads/test-branch",
-            object: {
-                sha: "def456"
-            }
-        }'
+    # Mock gh command to handle branch checks and updates
+    mock_gh() {
+        case "$*" in
+            *"api /repos/$TARGET_ORG/$REPO_NAME/branches/test-branch"*)
+                jq -n '{
+                    name: "test-branch",
+                    commit: {
+                        sha: "abc123"
+                    }
+                }'
+                ;;
+            *"api /repos/$SOURCE_ORG/$REPO_NAME/git/refs/heads/test-branch"*)
+                jq -n '{
+                    object: {
+                        sha: "def456"
+                    }
+                }'
+                ;;
+            *"api -X PATCH /repos/$TARGET_ORG/$REPO_NAME/git/refs/heads/test-branch"*)
+                jq -n '{
+                    ref: "refs/heads/test-branch",
+                    object: {
+                        sha: "def456"
+                    }
+                }'
+                ;;
+        esac
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_branch_check"
-    mock_command gh "mock_gh_source_commit"
-    mock_command gh "mock_gh_update_branch"
+    mock_command gh "mock_gh"
     
     # Call the function
     run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"
@@ -373,12 +378,12 @@ teardown() {
 @test "update_branch fails if branch does not exist" {
     bats_require_minimum_version 1.5.0
     # Mock branch does not exist
-    mock_gh_branch_check() {
+    mock_gh() {
         return 1
     }
     
     # Mock gh command
-    mock_command gh "mock_gh_branch_check"
+    mock_command gh "mock_gh"
     
     # Call the function
     run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "nonexistent-branch"
@@ -574,23 +579,17 @@ teardown() {
 
 @test "update_branch updates branch successfully" {
     bats_require_minimum_version 1.5.0
-    # Mock init_clone
+
     mock_init_clone() {
         return 0
     }
     mock_command init_clone "mock_init_clone"
     
-    # Mock git commands
-    mock_git_show_ref() {
+    mock_git() {
         return 0
     }
-    mock_git_fetch() {
-        return 0
-    }
-    mock_git_push() {
-        return 0
-    }
-    mock_command git "mock_git_show_ref" "mock_git_fetch" "mock_git_push"
+   
+    mock_command git "mock_git"
     
     run --separate-stderr update_branch "$TARGET_ORG" "$REPO_NAME" "test-branch"    
    

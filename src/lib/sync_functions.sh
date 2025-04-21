@@ -281,6 +281,7 @@ update_branch() {
 
 # Sync a single pull request
 # Usage: sync_single_pr <source_org> <source_repo> <target_org> <target_repo> <pr_number>
+# outputs the sync'd target PR JSON
 sync_single_pr() {
   local source_org=$1
   local source_repo=$2
@@ -361,23 +362,15 @@ sync_all_prs() {
 
   # Process PRs in parallel with progress reporting
   for pr_number in $pr_numbers; do
-    sync_single_pr "$source_org" "$source_repo" "$target_org" "$target_repo" "$pr_number" &
+    sync_single_pr "$source_org" "$source_repo" "$target_org" "$target_repo" "$pr_number"
     ((count++))
     ((completed++))
 
     # Show progress
     log $LOG_LEVEL_INFO "Progress: $completed/$total PRs completed"
 
-    # Limit parallel jobs
-    if [[ $count -ge $MAX_PARALLEL_JOBS ]]; then
-      wait
-      count=0
-    fi
   done
 
-  # Wait for remaining jobs
-  wait
-  log $LOG_LEVEL_INFO "All PRs have been synced"
   return 0
 }
 
