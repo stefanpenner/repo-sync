@@ -287,12 +287,13 @@ sync_single_pr() {
   local target_org=$3
   local target_repo=$4
   local pr_number=$5
-  local source_pr title body head base state target_prs existing_pr target_pr_number
+  local title body head base state target_prs existing_pr target_pr_number
 
   log $LOG_LEVEL_INFO "Syncing PR #$pr_number from $source_org/$source_repo to $target_org/$target_repo"
 
   # Get source PR information
-  if ! source_pr=$(get_pr_info "$source_org" "$source_repo" "$pr_number"); then
+  # TODO: maybe we will use this data later
+  if ! get_pr_info "$source_org" "$source_repo" "$pr_number"; then
     log $LOG_LEVEL_ERROR "Failed to get source PR information"
     return 1
   fi
